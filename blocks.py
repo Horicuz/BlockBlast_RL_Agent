@@ -130,3 +130,41 @@ SHAPES = {
                             [1, 1, 1], 
                             [1, 1, 1]], dtype=int)
 }
+
+SIZE_CATEGORIES = {
+    "small": [
+        "diag_2_1", "diag_2_2", 
+        "line_1x2", "line_2x1", "line_1x3", "line_3x1", 
+        "corner_3_ul", "corner_3_ur", "corner_3_dl", "corner_3_dr"
+    ],
+    "medium": [
+        "square_2x2", 
+        "T_4_up", "T_4_down", "T_4_left", "T_4_right", 
+        "S_4_h", "S_4_v", "Z_4_h", "Z_4_v", 
+        "L_4_1", "L_4_2", "L_4_3", "L_4_4", "J_4_1", "J_4_2", "J_4_3", "J_4_4"
+    ],
+    "large": [
+        "big_L_ul", "big_L_ur", "big_L_dl", "big_L_dr", 
+        "big_T_up", "big_T_down", "big_T_left", "big_T_right", 
+        "rect_2x3", "rect_3x2", "square_3x3"
+    ]
+}
+
+# COMPLEXITATE (Complexity)
+COMPLEXITY_CATEGORIES = {
+    "simple": [ # Linii și dreptunghiuri perfecte
+        "line_1x2", "line_2x1", "line_1x3", "line_3x1", 
+        "square_2x2", "rect_2x3", "rect_3x2", "square_3x3"
+    ],
+    "medium": [ # Colțuri și L-uri
+        "corner_3_ul", "corner_3_ur", "corner_3_dl", "corner_3_dr", 
+        "L_4_1", "L_4_2", "L_4_3", "L_4_4", "J_4_1", "J_4_2", "J_4_3", "J_4_4",
+        "big_L_ul", "big_L_ur", "big_L_dl", "big_L_dr"
+    ],
+    "hard": [ # S, Z, T, Diagonale
+        "diag_2_1", "diag_2_2", 
+        "T_4_up", "T_4_down", "T_4_left", "T_4_right", 
+        "S_4_h", "S_4_v", "Z_4_h", "Z_4_v", 
+        "big_T_up", "big_T_down", "big_T_left", "big_T_right"
+    ]
+}

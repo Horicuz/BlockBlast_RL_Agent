@@ -4,10 +4,21 @@ import numpy as np
 from engine import BlockBlastLogic
 
 class BlockBlastEnv(gym.Env):
-    def __init__(self):
+    def __init__(self, reward_config=None):
         super(BlockBlastEnv, self).__init__()
         self.game = BlockBlastLogic()
         self.action_space = spaces.Discrete(192)
+
+        self.reward_config = {
+            "placement_reward": 0.0,
+            "line_clear_scale": 10.0,
+            "line_clear_bonus": 0.0,
+            "no_line_penalty": 0.0,
+            "game_over_penalty": 100.0,
+            "reward_scale": 1.0,
+        }
+        if reward_config:
+            self.reward_config.update(reward_config)
         
         self.observation_space = spaces.Dict({
             "board": spaces.Box(low=0, high=1, shape=(8, 8), dtype=np.int32),
@@ -44,54 +55,30 @@ class BlockBlastEnv(gym.Env):
         self.game = BlockBlastLogic()
         return self._get_obs(), {}
 
-    def _calculate_fragmentation_penalty(self):
-        visited = np.zeros((8, 8), dtype=bool)
-        penalty = 0
-        for r in range(8):
-            for c in range(8):
-                if self.game.grid[r, c] == 0 and not visited[r, c]:
-                    region_size = 0
-                    stack = [(r, c)]
-                    while stack:
-                        curr_r, curr_c = stack.pop()
-                        if curr_r < 0 or curr_r >= 8 or curr_c < 0 or curr_c >= 8:
-                            continue
-                        if visited[curr_r, curr_c] or self.game.grid[curr_r, curr_c] == 1:
-                            continue
-                        visited[curr_r, curr_c] = True
-                        region_size += 1
-                        stack.extend([
-                            (curr_r - 1, curr_c), (curr_r + 1, curr_c), 
-                            (curr_r, curr_c - 1), (curr_r, curr_c + 1)
-                        ])
-                    if region_size < 9:
-                        penalty += (9 - region_size) 
-        return penalty
-
     def step(self, action):
         hand_index = action // 64
         remainder = action % 64
         row = remainder // 8
         col = remainder % 8
         
-        old_penalty = self._calculate_fragmentation_penalty()
-        
-        # PRELUĂM LINIILE DISTRUSE AICI
         is_valid, is_game_over, lines_cleared, f_rows, f_cols = self.game.step(hand_index, row, col)
+
+        cfg = self.reward_config
         
-        reward = 0
+        reward = 0.0
         if is_valid:
             if lines_cleared > 0:
-                reward += (lines_cleared ** 2) * 10
+                reward += (lines_cleared ** 2) * cfg["line_clear_scale"]
+                reward += lines_cleared * cfg["line_clear_bonus"]
             else:
-                reward += 1 
-            new_penalty = self._calculate_fragmentation_penalty()
-            reward -= (new_penalty - old_penalty) * 1.5 
+                reward += cfg["placement_reward"]
+                reward -= cfg["no_line_penalty"]
 
         if is_game_over:
-            reward -= 100
+            reward -= cfg["game_over_penalty"]
 
-        # TRIMITEM DATELE LA WATCH.PY
+        reward *= cfg["reward_scale"]
+
         info = {
             "anim_rows": f_rows,
             "anim_cols": f_cols
