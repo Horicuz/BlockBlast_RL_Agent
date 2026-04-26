@@ -1,0 +1,5 @@
+gymnasium>=0.29,<1.1
+numpy>=1.26,<3
+sb3-contrib>=2.3,<3
+stable-baselines3>=2.3,<3
+tensorboard>=2.16,<3

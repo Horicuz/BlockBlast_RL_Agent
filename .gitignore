@@ -7,7 +7,13 @@ __pycache__/
 
 # Virtual environments
 venv/
+.venv/
 .env/
 
 # Editor files
 .vscode/
+
+# Local dev artifacts
+tensorboard_logs/
+checkpoints/cnn_holes/
+.codex

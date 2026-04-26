@@ -2,6 +2,7 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 from collections import deque
+import random
 from engine import BlockBlastLogic
 
 import torch
@@ -17,22 +18,20 @@ class CustomCNNExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space: spaces.Dict, features_dim: int = 256):
         super().__init__(observation_space, features_dim)
         
-        # Extract shapes from observation_space
         board_shape = observation_space["board"].shape  # (1, 8, 8)
+        legal_shape = observation_space["valid_actions"].shape  # (3, 8, 8)
         hand_shape = observation_space["hand"].shape    # (3, 3, 3)
         
-        # CNN for board: input (1, 8, 8)
-        self.cnn = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1),
+        spatial_channels = board_shape[0] + legal_shape[0]
+        self.spatial_cnn = nn.Sequential(
+            nn.Conv2d(spatial_channels, 32, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
             nn.Flatten(),
         )
         
-        # Calculate CNN output size: after 2 conv layers with same padding, size stays 8x8
-        # 64 filters * 8 * 8
-        cnn_output_size = 64 * 8 * 8
+        spatial_output_size = 64 * 8 * 8
         
         # Linear layer for hand (3, 3, 3)
         hand_flat_size = np.prod(hand_shape)
@@ -50,7 +49,7 @@ class CustomCNNExtractor(BaseFeaturesExtractor):
         )
         
         # Final linear layer to combine all features
-        combined_size = cnn_output_size + 64 + 16
+        combined_size = spatial_output_size + 64 + 16
         self.fc_combined = nn.Sequential(
             nn.Linear(combined_size, features_dim),
             nn.ReLU(),
@@ -59,11 +58,12 @@ class CustomCNNExtractor(BaseFeaturesExtractor):
     def forward(self, observations):
         # Extract individual components
         board = observations["board"].float()  # Shape: (batch, 1, 8, 8)
+        valid_actions = observations["valid_actions"].float()  # Shape: (batch, 3, 8, 8)
         hand = observations["hand"].float()    # Shape: (batch, 3, 3, 3)
         available = observations["available"].float()  # Shape: (batch, 3)
         
-        # Process board through CNN
-        board_features = self.cnn(board)  # Shape: (batch, 4096)
+        spatial = torch.cat([board, valid_actions], dim=1)
+        spatial_features = self.spatial_cnn(spatial)  # Shape: (batch, 4096)
         
         # Process hand through linear
         hand_features = self.hand_fc(hand)  # Shape: (batch, 64)
@@ -72,7 +72,7 @@ class CustomCNNExtractor(BaseFeaturesExtractor):
         available_features = self.available_fc(available)  # Shape: (batch, 16)
         
         # Concatenate all features
-        combined = torch.cat([board_features, hand_features, available_features], dim=1)
+        combined = torch.cat([spatial_features, hand_features, available_features], dim=1)
         
         # Final processing
         output = self.fc_combined(combined)  # Shape: (batch, features_dim)
@@ -83,13 +83,14 @@ class CustomCNNExtractor(BaseFeaturesExtractor):
 class BlockBlastEnv(gym.Env):
     def __init__(self, reward_config=None, apply_hole_penalty=False):
         super(BlockBlastEnv, self).__init__()
-        self.game = BlockBlastLogic()
+        self.game = BlockBlastLogic(rng=self._new_game_rng())
         self.action_space = spaces.Discrete(192)
         self.apply_hole_penalty = apply_hole_penalty
         
         # Observation space with channel dimension for CNN compatibility
         self.observation_space = spaces.Dict({
             "board": spaces.Box(low=0, high=1, shape=(1, 8, 8), dtype=np.int32),
+            "valid_actions": spaces.MultiBinary((3, 8, 8)),
             "hand": spaces.Box(low=0, high=1, shape=(3, 3, 3), dtype=np.int32),
             "available": spaces.MultiBinary(3)
         })
@@ -103,9 +104,15 @@ class BlockBlastEnv(gym.Env):
             "game_over_penalty": 200.0,
             "game_over_early_weight": 3.0,
             "reward_scale": 1.0,
+            "hole_penalty_weight": 0.25,
+            "created_hole_penalty_weight": 1.0,
         }
         if reward_config:
             self.reward_config.update(reward_config)
+
+    def _new_game_rng(self):
+        seed = int(self.np_random.integers(0, 2**32 - 1))
+        return random.Random(seed)
 
     def valid_action_mask(self):
         """Return valid action mask for 192 possible placements (3 pieces * 8x8 grid)."""
@@ -121,17 +128,15 @@ class BlockBlastEnv(gym.Env):
                         mask[action_idx] = 1
         return mask
 
-    def _calculate_holes_penalty(self, grid):
+    def _count_small_hole_cells(self, grid):
         """
-        Calculate penalty for isolated empty regions (holes) using flood fill (BFS).
+        Count cells that belong to small isolated empty regions using flood fill (BFS).
         
         An isolated hole is an empty region (0-valued cells) that is "small" 
         (e.g., size <= 3). Larger empty regions are acceptable playable space.
-        
-        Returns: penalty value (negative, to be added to reward)
         """
         visited = np.zeros_like(grid, dtype=bool)
-        hole_penalty = 0.0
+        small_hole_cells = 0
         
         def bfs_flood_fill(start_r, start_c):
             """BFS to find all connected empty cells."""
@@ -159,11 +164,35 @@ class BlockBlastEnv(gym.Env):
             for c in range(8):
                 if grid[r, c] == 0 and not visited[r, c]:
                     region_size = bfs_flood_fill(r, c)
-                    # Penalize small isolated holes (size 1-3)
                     if 1 <= region_size <= 3:
-                        hole_penalty += region_size * 0.5  # penalty = 0.5 to 1.5 per hole
+                        small_hole_cells += region_size
         
-        return -hole_penalty  # Return negative (penalty)
+        return small_hole_cells
+
+    def _calculate_holes_penalty(self, grid, previous_grid=None):
+        """
+        Penalize both current small holes and newly-created small holes.
+
+        The created-hole component matters most for learning because it connects the
+        penalty to the action that worsened board shape.
+        """
+        cfg = self.reward_config
+        current_hole_cells = self._count_small_hole_cells(grid)
+        penalty = current_hole_cells * cfg["hole_penalty_weight"]
+        previous_hole_cells = None
+        created_hole_cells = 0
+
+        if previous_grid is not None:
+            previous_hole_cells = self._count_small_hole_cells(previous_grid)
+            created_hole_cells = max(current_hole_cells - previous_hole_cells, 0)
+            penalty += created_hole_cells * cfg["created_hole_penalty_weight"]
+
+        return {
+            "penalty": -penalty,
+            "current_hole_cells": current_hole_cells,
+            "previous_hole_cells": previous_hole_cells,
+            "created_hole_cells": created_hole_cells,
+        }
 
     def _get_obs(self):
         """Construct observation dict with board reshaped to (1, 8, 8)."""
@@ -177,13 +206,14 @@ class BlockBlastEnv(gym.Env):
         
         return {
             "board": board_reshaped,
+            "valid_actions": self.valid_action_mask().reshape(3, 8, 8).astype(np.int8),
             "hand": padded_hand,
             "available": np.array(self.game.available, dtype=np.int8)
         }
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        self.game = BlockBlastLogic()
+        self.game = BlockBlastLogic(rng=self._new_game_rng())
         return self._get_obs(), {}
 
     def step(self, action):
@@ -191,37 +221,57 @@ class BlockBlastEnv(gym.Env):
         remainder = action % 64
         row = remainder // 8
         col = remainder % 8
+        previous_grid = self.game.grid.copy()
         
         is_valid, is_game_over, lines_cleared, f_rows, f_cols, stage_completed = self.game.step(hand_index, row, col)
         
         cfg = self.reward_config
         reward = 0.0
+        reward_line = 0.0
+        reward_stage = 0.0
+        reward_holes = 0.0
+        reward_game_over = 0.0
+        hole_stats = {
+            "current_hole_cells": self._count_small_hole_cells(self.game.grid),
+            "previous_hole_cells": None,
+            "created_hole_cells": 0,
+        }
         
         if is_valid:
             if lines_cleared > 0:
-                reward += (lines_cleared ** 2) * cfg["line_clear_scale"]
-                reward += lines_cleared * cfg["line_clear_bonus"]
+                reward_line = (lines_cleared ** 2) * cfg["line_clear_scale"]
+                reward_line += lines_cleared * cfg["line_clear_bonus"]
+                reward += reward_line
             else:
                 reward += cfg["placement_reward"]
                 reward -= cfg["no_line_penalty"]
             
             if stage_completed:
-                reward += cfg["stage_complete_reward"]
+                reward_stage = cfg["stage_complete_reward"]
+                reward += reward_stage
             
-            # Apply hole penalty if enabled
             if self.apply_hole_penalty:
-                hole_penalty = self._calculate_holes_penalty(self.game.grid)
-                reward += hole_penalty
+                hole_stats = self._calculate_holes_penalty(self.game.grid, previous_grid)
+                reward_holes = hole_stats["penalty"]
+                reward += reward_holes
         
         if is_game_over:
             early_loss_multiplier = 1.0 + (cfg["game_over_early_weight"] / (self.game.stages_passed + 1))
-            reward -= cfg["game_over_penalty"] * early_loss_multiplier
+            reward_game_over = -cfg["game_over_penalty"] * early_loss_multiplier
+            reward += reward_game_over
         
         reward *= cfg["reward_scale"]
         
         info = {
             "anim_rows": f_rows,
-            "anim_cols": f_cols
+            "anim_cols": f_cols,
+            "reward/line": reward_line * cfg["reward_scale"],
+            "reward/stage": reward_stage * cfg["reward_scale"],
+            "reward/holes": reward_holes * cfg["reward_scale"],
+            "reward/game_over": reward_game_over * cfg["reward_scale"],
+            "holes/current_cells": hole_stats["current_hole_cells"],
+            "holes/created_cells": hole_stats["created_hole_cells"],
+            "game/valid_actions": int(self.valid_action_mask().sum()),
         }
         
         if is_game_over:

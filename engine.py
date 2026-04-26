@@ -3,7 +3,8 @@ import random
 from blocks import SHAPES
 
 class BlockBlastLogic:
-    def __init__(self):
+    def __init__(self, rng=None):
+        self.rng = rng or random.Random()
         self.grid = np.zeros((8, 8), dtype=int)
         self.stages_passed = 0
         self.lines_destroyed = 0
@@ -14,10 +15,9 @@ class BlockBlastLogic:
         if not self.get_new_hand():
             raise RuntimeError("Nu s-a putut genera o mana initiala solvabila.")
 
-    @staticmethod
-    def _shuffled_keys():
+    def _shuffled_keys(self):
         keys = list(SHAPES.keys())
-        random.shuffle(keys)
+        self.rng.shuffle(keys)
         return keys
 
     @staticmethod
@@ -62,7 +62,7 @@ class BlockBlastLogic:
             if not legal_moves:
                 continue
 
-            random.shuffle(legal_moves)
+            self.rng.shuffle(legal_moves)
             for row, col in legal_moves:
                 next_grid = self._apply_move_on_grid(grid, block, row, col)
                 suffix = self._find_solvable_hand_sequence(next_grid, depth - 1)
@@ -79,6 +79,7 @@ class BlockBlastLogic:
             self.available = [False, False, False]
             return False
 
+        self.rng.shuffle(hand_keys)
         self.hand = [SHAPES[key] for key in hand_keys]
         self.available = [True, True, True]
         return True

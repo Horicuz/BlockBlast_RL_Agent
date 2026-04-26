@@ -18,7 +18,10 @@ git checkout main
 ### 2. Verifică mediul
 
 ```bash
-source venv/bin/activate
+python3 -m virtualenv .venv
+source .venv/bin/activate
+pip install -r requirements-torch-cpu.txt
+pip install -r requirements.txt
 python3 -c "import torch; print(torch.cuda.is_available())"
 ```
 
@@ -34,6 +37,8 @@ python3 train.py \
   --tb-log-name PPO_BlockBlast_CNN_NoHoles_V1 \
   --checkpoint-dir ./checkpoints/cnn_noholes/ \
   --num-cpu 8 \
+  --torch-threads 4 \
+  --subproc-start-method fork \
   --device auto
 ```
 
@@ -41,12 +46,19 @@ python3 train.py \
 
 ```bash
 python3 train.py \
-  --resume \
+  --no-resume \
   --apply-hole-penalty \
+  --hole-penalty-weight 0.25 \
+  --created-hole-penalty-weight 1.0 \
   --model-path ./checkpoints/cnn_holes/block_blast_cnn_holes_v1 \
   --tb-log-name PPO_BlockBlast_CNN_Holes_V1 \
   --checkpoint-dir ./checkpoints/cnn_holes/ \
+  --checkpoint-freq 1000000 \
+  --eval-freq 500000 \
+  --eval-episodes 100 \
   --num-cpu 8 \
+  --torch-threads 4 \
+  --subproc-start-method fork \
   --device auto
 ```
 
@@ -80,7 +92,12 @@ tensorboard --logdir=./tensorboard_logs/
 ### Hole Penalty (in env.py)
 - BFS flood fill pe celule vide
 - Connectivity ortogonală: sus, jos, stânga, dreapta
-- Penalizează doar regiuni mici, izolate
+- Penalizează regiuni mici și adaugă penalizare separată pentru găuri nou create
+
+### Legal Action Maps (in env.py)
+- Observația include `valid_actions` cu shape `(3, 8, 8)`
+- CNN-ul primește board-ul plus hărțile pozițiilor valide ca input spațial
+- Action masking rămâne activ, dar rețeaua vede explicit unde poate juca fiecare piesă
 
 ### Training Integration (in train.py)
 - `policy_kwargs` injectează `CustomCNNExtractor`

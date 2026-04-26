@@ -3,6 +3,7 @@ import os
 import time
 
 import gymnasium as gym
+import numpy as np
 import torch
 from env import BlockBlastEnv, CustomCNNExtractor
 from sb3_contrib import MaskablePPO
@@ -30,12 +31,104 @@ class TensorboardStatsCallback(BaseCallback):
         if not self.enabled:
             return True
 
-        for info in self.locals.get("infos", []):
+        infos = self.locals.get("infos", [])
+        scalar_keys = [
+            "reward/line",
+            "reward/stage",
+            "reward/holes",
+            "reward/game_over",
+            "holes/current_cells",
+            "holes/created_cells",
+            "game/valid_actions",
+        ]
+
+        for key in scalar_keys:
+            values = [info[key] for info in infos if key in info]
+            if values:
+                self.logger.record(f"step_stats/{key.replace('/', '_')}", float(np.mean(values)))
+
+        for info in infos:
             if "game/etap_max" in info:
                 self.logger.record("game_stats/Etape_Supravietuite", info["game/etap_max"])
                 self.logger.record("game_stats/Linii_Distruse", info["game/linii_distruse"])
                 self.logger.record("game_stats/Blocuri_Puse", info["game/blocuri_puse"])
         return True
+
+
+class StageEvalCallback(BaseCallback):
+    def __init__(
+        self,
+        reward_config,
+        eval_freq=0,
+        n_eval_episodes=50,
+        max_eval_steps=5000,
+        deterministic=True,
+        verbose=0,
+    ):
+        super().__init__(verbose)
+        self.reward_config = reward_config
+        self.eval_freq = eval_freq
+        self.n_eval_episodes = n_eval_episodes
+        self.max_eval_steps = max_eval_steps
+        self.deterministic = deterministic
+        self.last_eval_step = 0
+
+    def _on_step(self) -> bool:
+        if self.eval_freq <= 0:
+            return True
+        if self.num_timesteps - self.last_eval_step < self.eval_freq:
+            return True
+
+        self.last_eval_step = self.num_timesteps
+        stages, lines, blocks = self._run_eval()
+
+        self.logger.record("eval_stages/mean", float(np.mean(stages)))
+        self.logger.record("eval_stages/median", float(np.median(stages)))
+        self.logger.record("eval_stages/p90", float(np.percentile(stages, 90)))
+        self.logger.record("eval_stages/max", float(np.max(stages)))
+        self.logger.record("eval_stats/mean_lines", float(np.mean(lines)))
+        self.logger.record("eval_stats/mean_blocks", float(np.mean(blocks)))
+
+        if self.verbose:
+            print(
+                f"Eval @ {self.num_timesteps}: mean_stages={np.mean(stages):.2f}, "
+                f"p90={np.percentile(stages, 90):.1f}, max={np.max(stages)}"
+            )
+
+        return True
+
+    def _run_eval(self):
+        stages = []
+        lines = []
+        blocks = []
+        eval_env = BlockBlastEnv(
+            reward_config=self.reward_config,
+            apply_hole_penalty=self.reward_config["apply_hole_penalty"],
+        )
+
+        try:
+            for episode_idx in range(self.n_eval_episodes):
+                obs, _ = eval_env.reset(seed=10_000 + episode_idx)
+                done = False
+                step_count = 0
+
+                while not done and step_count < self.max_eval_steps:
+                    action_mask = eval_env.valid_action_mask()
+                    action, _ = self.model.predict(
+                        obs,
+                        action_masks=action_mask,
+                        deterministic=self.deterministic,
+                    )
+                    obs, _, done, _, _ = eval_env.step(int(action))
+                    step_count += 1
+
+                stages.append(eval_env.game.stages_passed)
+                lines.append(eval_env.game.lines_destroyed)
+                blocks.append(eval_env.game.blocks_placed)
+        finally:
+            eval_env.close()
+
+        return np.array(stages), np.array(lines), np.array(blocks)
 
 
 def make_env(reward_config):
@@ -54,6 +147,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Train or benchmark the Block Blast PPO agent")
     parser.add_argument("--device", choices=["auto", "cpu", "cuda", "mps"], default="auto")
     parser.add_argument("--vec-env", choices=["subproc", "dummy"], default="subproc")
+    parser.add_argument("--subproc-start-method", choices=["fork", "forkserver", "spawn"], default="fork")
     parser.add_argument("--num-cpu", type=int, default=8)
     parser.add_argument("--n-steps", type=int, default=4096)
     parser.add_argument("--batch-size", type=int, default=2048)
@@ -83,6 +177,11 @@ def parse_args():
     parser.add_argument("--reward-game-over-early-weight", type=float, default=3.0)
     parser.add_argument("--reward-scale", type=float, default=1.0)
     parser.add_argument("--apply-hole-penalty", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--hole-penalty-weight", type=float, default=0.25)
+    parser.add_argument("--created-hole-penalty-weight", type=float, default=1.0)
+    parser.add_argument("--eval-freq", type=int, default=500_000)
+    parser.add_argument("--eval-episodes", type=int, default=100)
+    parser.add_argument("--max-eval-steps", type=int, default=5000)
 
     parser.add_argument("--torch-threads", type=int, default=0)
     return parser.parse_args()
@@ -103,16 +202,20 @@ def resolve_device(choice: str) -> str:
     return "cpu"
 
 
-def build_vec_env(vec_env_kind: str, num_cpu: int, reward_config):
+def build_vec_env(vec_env_kind: str, num_cpu: int, reward_config, start_method: str = "fork"):
     env_fns = [make_env(reward_config) for _ in range(num_cpu)]
     if vec_env_kind == "dummy":
         return DummyVecEnv(env_fns)
-    return SubprocVecEnv(env_fns)
+    return SubprocVecEnv(env_fns, start_method=start_method)
 
 
 def configure_torch_threads(thread_count: int):
     if thread_count > 0:
         torch.set_num_threads(thread_count)
+        try:
+            torch.set_num_interop_threads(max(1, min(thread_count, 4)))
+        except RuntimeError:
+            pass
 
 
 def build_reward_config(args):
@@ -126,6 +229,8 @@ def build_reward_config(args):
         "game_over_early_weight": args.reward_game_over_early_weight,
         "reward_scale": args.reward_scale,
         "apply_hole_penalty": args.apply_hole_penalty,
+        "hole_penalty_weight": args.hole_penalty_weight,
+        "created_hole_penalty_weight": args.created_hole_penalty_weight,
     }
 
 
@@ -181,11 +286,23 @@ def build_model(env, device: str, args):
     return model, False
 
 
-def build_training_callbacks(args):
+def build_training_callbacks(args, reward_config):
     callbacks = []
 
     if args.log_stats:
         callbacks.append(TensorboardStatsCallback(enabled=True))
+
+    if args.eval_freq > 0:
+        callbacks.append(
+            StageEvalCallback(
+                reward_config=reward_config,
+                eval_freq=args.eval_freq,
+                n_eval_episodes=args.eval_episodes,
+                max_eval_steps=args.max_eval_steps,
+                deterministic=True,
+                verbose=1,
+            )
+        )
 
     if args.checkpoint_freq > 0:
         os.makedirs(args.checkpoint_dir, exist_ok=True)
@@ -208,11 +325,13 @@ def build_training_callbacks(args):
 
 def run_benchmark(args, reward_config):
     candidate_configs = [
+        {"device": "cpu", "num_cpu": 8, "n_steps": 2048, "batch_size": 1024, "n_epochs": 8, "torch_threads": 1, "vec_env": "subproc"},
+        {"device": "cpu", "num_cpu": 12, "n_steps": 2048, "batch_size": 1024, "n_epochs": 8, "torch_threads": 1, "vec_env": "subproc"},
+        {"device": "cpu", "num_cpu": 16, "n_steps": 2048, "batch_size": 1024, "n_epochs": 8, "torch_threads": 1, "vec_env": "subproc"},
+        {"device": "cpu", "num_cpu": 12, "n_steps": 1024, "batch_size": 1024, "n_epochs": 8, "torch_threads": 1, "vec_env": "subproc"},
+        {"device": "cpu", "num_cpu": 12, "n_steps": 2048, "batch_size": 2048, "n_epochs": 5, "torch_threads": 1, "vec_env": "subproc"},
         {"device": "cpu", "num_cpu": 8, "n_steps": 2048, "batch_size": 1024, "n_epochs": 8, "torch_threads": 4, "vec_env": "subproc"},
         {"device": "cpu", "num_cpu": 1, "n_steps": 2048, "batch_size": 1024, "n_epochs": 8, "torch_threads": 4, "vec_env": "dummy"},
-        {"device": "cpu", "num_cpu": 8, "n_steps": 4096, "batch_size": 1024, "n_epochs": 8, "torch_threads": 4, "vec_env": "subproc"},
-        {"device": "cpu", "num_cpu": 1, "n_steps": 4096, "batch_size": 1024, "n_epochs": 8, "torch_threads": 4, "vec_env": "dummy"},
-        {"device": "cpu", "num_cpu": 6, "n_steps": 4096, "batch_size": 1024, "n_epochs": 8, "torch_threads": 4, "vec_env": "subproc"},
     ]
 
     if torch.backends.mps.is_available():
@@ -230,8 +349,8 @@ def run_benchmark(args, reward_config):
             f"n_epochs={candidate['n_epochs']}"
         )
 
-        torch.set_num_threads(candidate["torch_threads"])
-        env = build_vec_env(candidate["vec_env"], candidate["num_cpu"], reward_config)
+        configure_torch_threads(candidate["torch_threads"])
+        env = build_vec_env(candidate["vec_env"], candidate["num_cpu"], reward_config, args.subproc_start_method)
         model = MaskablePPO(
             "MultiInputPolicy",
             env,
@@ -243,6 +362,10 @@ def run_benchmark(args, reward_config):
             batch_size=candidate["batch_size"],
             n_epochs=candidate["n_epochs"],
             device=candidate["device"],
+            policy_kwargs=dict(
+                features_extractor_class=CustomCNNExtractor,
+                features_extractor_kwargs=dict(features_dim=256),
+            ),
         )
 
         start_time = time.perf_counter()
@@ -253,8 +376,9 @@ def run_benchmark(args, reward_config):
             callback=None,
         )
         elapsed = time.perf_counter() - start_time
-        fps = args.benchmark_steps / elapsed if elapsed > 0 else 0.0
-        print(f"    -> elapsed={elapsed:.2f}s, fps={fps:.1f}")
+        actual_steps = model.num_timesteps
+        fps = actual_steps / elapsed if elapsed > 0 else 0.0
+        print(f"    -> elapsed={elapsed:.2f}s, steps={actual_steps}, fps={fps:.1f}")
         results.append((fps, candidate))
 
         env.close()
@@ -298,11 +422,11 @@ def main():
     print(f"🧱 Checkpoint dir: {args.checkpoint_dir}")
     print(f"🕳️ Hole penalty: {'ENABLED' if args.apply_hole_penalty else 'DISABLED'}")
 
-    env = build_vec_env(args.vec_env, args.num_cpu, reward_config)
+    env = build_vec_env(args.vec_env, args.num_cpu, reward_config, args.subproc_start_method)
     model, resumed = build_model(env, device, args)
 
     print("🏁 Începem antrenamentul...")
-    callback = build_training_callbacks(args)
+    callback = build_training_callbacks(args, reward_config)
     interrupted = False
 
     try:

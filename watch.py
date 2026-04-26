@@ -1,6 +1,5 @@
 import argparse
 import os
-import random
 import time
 
 import numpy as np
@@ -58,7 +57,7 @@ SHAPE_KEYS = list(SHAPES.keys())
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Play and compare Block Blast runs against the AI")
-    parser.add_argument("--model-path", default="checkpoints/roundsafe/block_blast_roundsafe_v1", help="Model path with or without .zip")
+    parser.add_argument("--model-path", default="checkpoints/cnn_holes/block_blast_cnn_holes_v1_5000000_steps", help="Model path with or without .zip")
     parser.add_argument("--auto-interval", type=float, default=AUTO_MOVE_INTERVAL)
     return parser.parse_args()
 
@@ -90,6 +89,7 @@ def capture_game_state(game):
         "stages_passed": game.stages_passed,
         "lines_destroyed": game.lines_destroyed,
         "blocks_placed": game.blocks_placed,
+        "rng_state": game.rng.getstate(),
     }
 
 
@@ -100,12 +100,13 @@ def restore_game_state(game, game_state):
     game.stages_passed = game_state["stages_passed"]
     game.lines_destroyed = game_state["lines_destroyed"]
     game.blocks_placed = game_state["blocks_placed"]
+    if "rng_state" in game_state:
+        game.rng.setstate(game_state["rng_state"])
 
 
 def capture_snapshot(raw_env, runtime_state):
     return {
         "game_state": capture_game_state(raw_env.game),
-        "random_state": random.getstate(),
         "done": runtime_state["done"],
         "mode": runtime_state["mode"],
         "last_action_text": runtime_state["last_action_text"],
@@ -115,8 +116,6 @@ def capture_snapshot(raw_env, runtime_state):
 
 def apply_snapshot(raw_env, runtime_state, snapshot):
     restore_game_state(raw_env.game, snapshot["game_state"])
-    random.setstate(snapshot["random_state"])
-
     runtime_state["obs"] = raw_env._get_obs()
     runtime_state["done"] = snapshot["done"]
     runtime_state["mode"] = snapshot.get("mode", runtime_state["mode"])
