@@ -1,5 +1,6 @@
 import argparse
 import os
+import shutil
 import time
 
 import gymnasium as gym
@@ -11,6 +12,36 @@ from sb3_contrib.common.wrappers import ActionMasker
 from stable_baselines3.common.callbacks import BaseCallback, CallbackList, CheckpointCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
+
+CURRICULUM_PRESETS = {
+    "phase1": {
+        "model_path": "block_blast_phase1_v1",
+        "tb_log_name": "PPO_BlockBlast_Phase1_V1",
+        "best_model_dir": "./checkpoints/best_phase1_v1/",
+        "total_timesteps": 15_000_000,
+        "reward_stage_complete": 15.0,
+        "reward_game_over": 180.0,
+        "reward_game_over_early_weight": 2.5,
+    },
+    "phase2": {
+        "model_path": "block_blast_phase2_v1",
+        "tb_log_name": "PPO_BlockBlast_Phase2_V1",
+        "best_model_dir": "./checkpoints/best_phase2_v1/",
+        "total_timesteps": 20_000_000,
+        "reward_stage_complete": 8.0,
+        "reward_game_over": 260.0,
+        "reward_game_over_early_weight": 3.0,
+    },
+    "phase3": {
+        "model_path": "block_blast_phase3_v1",
+        "tb_log_name": "PPO_BlockBlast_Phase3_V1",
+        "best_model_dir": "./checkpoints/best_phase3_v1/",
+        "total_timesteps": 25_000_000,
+        "reward_stage_complete": 3.0,
+        "reward_game_over": 350.0,
+        "reward_game_over_early_weight": 3.0,
+    },
+}
 
 def mask_fn(env: gym.Env):
     if hasattr(env, "valid_action_mask"):
@@ -50,36 +81,39 @@ def make_env(reward_config):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train or benchmark the Block Blast PPO agent")
+    parser.add_argument("--curriculum-phase", choices=["phase1", "phase2", "phase3", "custom"], default="phase1")
     parser.add_argument("--device", choices=["auto", "cpu", "cuda", "mps"], default="auto")
     parser.add_argument("--vec-env", choices=["subproc", "dummy"], default="subproc")
     parser.add_argument("--num-cpu", type=int, default=8)
-    parser.add_argument("--n-steps", type=int, default=2048)
-    parser.add_argument("--batch-size", type=int, default=1024)
+    parser.add_argument("--n-steps", type=int, default=4096)
+    parser.add_argument("--batch-size", type=int, default=2048)
     parser.add_argument("--n-epochs", type=int, default=8)
-    parser.add_argument("--learning-rate", type=float, default=0.0003)
-    parser.add_argument("--gamma", type=float, default=0.97)
-    parser.add_argument("--ent-coef", type=float, default=0.005)
+    parser.add_argument("--learning-rate", type=float, default=0.0002)
+    parser.add_argument("--gamma", type=float, default=0.99)
+    parser.add_argument("--ent-coef", type=float, default=0.02)
     parser.add_argument("--lr-schedule", choices=["constant", "linear"], default="linear")
     parser.add_argument("--lr-final-ratio", type=float, default=0.2)
-    parser.add_argument("--total-timesteps", type=int, default=20_000_000)
+    parser.add_argument("--total-timesteps", type=int, default=25_000_000)
     parser.add_argument("--benchmark", action="store_true")
     parser.add_argument("--benchmark-steps", type=int, default=30_000)
-    parser.add_argument("--model-path", default="block_blast_ai_v4")
-    parser.add_argument("--tb-log-name", default="PPO_BlockBlast_V4")
+    parser.add_argument("--model-path", default="block_blast_uniformsafe_v1")
+    parser.add_argument("--tb-log-name", default="PPO_BlockBlast_UniformSafe_V1")
     parser.add_argument("--log-dir", default="./tensorboard_logs/")
     parser.add_argument("--checkpoint-dir", default="./checkpoints/")
-    parser.add_argument("--checkpoint-freq", type=int, default=500_000)
-    parser.add_argument("--best-model-dir", default="./checkpoints/best/")
-    parser.add_argument("--eval-freq", type=int, default=500_000)
+    parser.add_argument("--checkpoint-freq", type=int, default=0)
+    parser.add_argument("--best-model-dir", default="./checkpoints/best_uniformsafe_v1/")
+    parser.add_argument("--eval-freq", type=int, default=250_000)
     parser.add_argument("--eval-episodes", type=int, default=20)
-    parser.add_argument("--resume", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--resume", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--log-stats", action=argparse.BooleanOptionalAction, default=True)
 
     parser.add_argument("--reward-placement", type=float, default=0.0)
     parser.add_argument("--reward-line-scale", type=float, default=10.0)
     parser.add_argument("--reward-line-bonus", type=float, default=0.0)
+    parser.add_argument("--reward-stage-complete", type=float, default=10.0)
     parser.add_argument("--reward-no-line", type=float, default=0.0)
-    parser.add_argument("--reward-game-over", type=float, default=100.0)
+    parser.add_argument("--reward-game-over", type=float, default=200.0)
+    parser.add_argument("--reward-game-over-early-weight", type=float, default=3.0)
     parser.add_argument("--reward-scale", type=float, default=1.0)
 
     parser.add_argument("--torch-threads", type=int, default=0)
@@ -113,13 +147,29 @@ def configure_torch_threads(thread_count: int):
         torch.set_num_threads(thread_count)
 
 
+def apply_curriculum_preset(args):
+    if args.curriculum_phase == "custom":
+        return
+
+    preset = CURRICULUM_PRESETS[args.curriculum_phase]
+    args.model_path = preset["model_path"]
+    args.tb_log_name = preset["tb_log_name"]
+    args.best_model_dir = preset["best_model_dir"]
+    args.total_timesteps = preset["total_timesteps"]
+    args.reward_stage_complete = preset["reward_stage_complete"]
+    args.reward_game_over = preset["reward_game_over"]
+    args.reward_game_over_early_weight = preset["reward_game_over_early_weight"]
+
+
 def build_reward_config(args):
     return {
         "placement_reward": args.reward_placement,
         "line_clear_scale": args.reward_line_scale,
         "line_clear_bonus": args.reward_line_bonus,
+        "stage_complete_reward": args.reward_stage_complete,
         "no_line_penalty": args.reward_no_line,
         "game_over_penalty": args.reward_game_over,
+        "game_over_early_weight": args.reward_game_over_early_weight,
         "reward_scale": args.reward_scale,
     }
 
@@ -204,6 +254,14 @@ def build_training_callbacks(args, eval_env):
     return CallbackList(callbacks)
 
 
+def export_named_best_model(args):
+    source_best_model = os.path.join(args.best_model_dir, "best_model.zip")
+    target_best_model = args.model_path + "_best.zip"
+    if os.path.exists(source_best_model):
+        shutil.copyfile(source_best_model, target_best_model)
+        print(f"🏆 Best model exportat ca: {target_best_model}")
+
+
 def run_benchmark(args, reward_config):
     candidate_configs = [
         {"device": "cpu", "num_cpu": 8, "n_steps": 2048, "batch_size": 1024, "n_epochs": 8, "torch_threads": 4, "vec_env": "subproc"},
@@ -278,6 +336,7 @@ def run_benchmark(args, reward_config):
 
 def main():
     args = parse_args()
+    apply_curriculum_preset(args)
 
     if args.torch_threads <= 0:
         args.torch_threads = max(1, min(4, (os.cpu_count() or 1) // 2))
@@ -291,6 +350,7 @@ def main():
 
     device = resolve_device(args.device)
     print(f"🚀 Antrenament pe: {device.upper()}")
+    print(f"🧭 Curriculum phase: {args.curriculum_phase}")
     print(f"⚡ Se pornesc {args.num_cpu} instanțe de joc în paralel...")
     print(f"📦 Model path: {args.model_path}.zip")
 
@@ -300,6 +360,7 @@ def main():
 
     print("🏁 Începem antrenamentul...")
     callback = build_training_callbacks(args, eval_env)
+    interrupted = False
 
     try:
         model.learn(
@@ -310,13 +371,22 @@ def main():
         )
 
         print("Antrenament complet! Salvăm modelul final...")
-        model.save(args.model_path)
+    except KeyboardInterrupt:
+        interrupted = True
+        print("\n⏹️ Antrenament oprit manual. Salvăm progresul curent...")
     finally:
+        model.save(args.model_path)
+        print(f"💾 Model salvat în: {args.model_path}.zip")
+        export_named_best_model(args)
+
         for vec_env in (env, eval_env):
             try:
                 vec_env.close()
             except Exception:
                 pass
+
+    if interrupted:
+        print("ℹ️ Poți relua ulterior cu --resume dacă vrei să continui din acest punct.")
 
 if __name__ == "__main__":
     main()

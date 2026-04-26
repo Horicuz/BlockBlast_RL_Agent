@@ -13,8 +13,10 @@ class BlockBlastEnv(gym.Env):
             "placement_reward": 0.0,
             "line_clear_scale": 10.0,
             "line_clear_bonus": 0.0,
+            "stage_complete_reward": 10.0,
             "no_line_penalty": 0.0,
-            "game_over_penalty": 100.0,
+            "game_over_penalty": 200.0,
+            "game_over_early_weight": 3.0,
             "reward_scale": 1.0,
         }
         if reward_config:
@@ -61,7 +63,7 @@ class BlockBlastEnv(gym.Env):
         row = remainder // 8
         col = remainder % 8
         
-        is_valid, is_game_over, lines_cleared, f_rows, f_cols = self.game.step(hand_index, row, col)
+        is_valid, is_game_over, lines_cleared, f_rows, f_cols, stage_completed = self.game.step(hand_index, row, col)
 
         cfg = self.reward_config
         
@@ -74,8 +76,12 @@ class BlockBlastEnv(gym.Env):
                 reward += cfg["placement_reward"]
                 reward -= cfg["no_line_penalty"]
 
+            if stage_completed:
+                reward += cfg["stage_complete_reward"]
+
         if is_game_over:
-            reward -= cfg["game_over_penalty"]
+            early_loss_multiplier = 1.0 + (cfg["game_over_early_weight"] / (self.game.stages_passed + 1))
+            reward -= cfg["game_over_penalty"] * early_loss_multiplier
 
         reward *= cfg["reward_scale"]
 

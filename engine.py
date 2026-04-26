@@ -1,7 +1,6 @@
 import numpy as np
 import random
-# IMPORTĂM NOILE CATALOGOACE
-from blocks import SHAPES, SIZE_CATEGORIES, COMPLEXITY_CATEGORIES
+from blocks import SHAPES
 
 class BlockBlastLogic:
     def __init__(self):
@@ -12,52 +11,77 @@ class BlockBlastLogic:
         
         self.hand = []
         self.available = []
-        self.get_new_hand()
+        if not self.get_new_hand():
+            raise RuntimeError("Nu s-a putut genera o mana initiala solvabila.")
 
-    def _get_piece_info(self, key):
-        """Caută direct în dicționarele statice din blocks.py"""
-        size = 'small' if key in SIZE_CATEGORIES['small'] else 'medium' if key in SIZE_CATEGORIES['medium'] else 'large'
-        comp = 'simple' if key in COMPLEXITY_CATEGORIES['simple'] else 'medium' if key in COMPLEXITY_CATEGORIES['medium'] else 'hard'
-        return size, comp
+    @staticmethod
+    def _shuffled_keys():
+        keys = list(SHAPES.keys())
+        random.shuffle(keys)
+        return keys
+
+    @staticmethod
+    def _can_place_on_grid(grid, block, row, col):
+        block_h, block_w = block.shape
+        if row + block_h > 8 or col + block_w > 8:
+            return False
+        target_area = grid[row:row+block_h, col:col+block_w]
+        return not np.any(np.logical_and(target_area, block))
+
+    def _get_legal_moves_on_grid(self, grid, block):
+        block_h, block_w = block.shape
+        legal_moves = []
+        for row in range(8 - block_h + 1):
+            for col in range(8 - block_w + 1):
+                if self._can_place_on_grid(grid, block, row, col):
+                    legal_moves.append((row, col))
+        return legal_moves
+
+    @staticmethod
+    def _apply_move_on_grid(grid, block, row, col):
+        next_grid = grid.copy()
+        block_h, block_w = block.shape
+        next_grid[row:row+block_h, col:col+block_w] += block
+
+        full_rows = list(np.where(np.all(next_grid == 1, axis=1))[0])
+        full_cols = list(np.where(np.all(next_grid == 1, axis=0))[0])
+        if full_rows:
+            next_grid[full_rows, :] = 0
+        if full_cols:
+            next_grid[:, full_cols] = 0
+
+        return next_grid
+
+    def _find_solvable_hand_sequence(self, grid, depth):
+        if depth == 0:
+            return []
+
+        for key in self._shuffled_keys():
+            block = SHAPES[key]
+            legal_moves = self._get_legal_moves_on_grid(grid, block)
+            if not legal_moves:
+                continue
+
+            random.shuffle(legal_moves)
+            for row, col in legal_moves:
+                next_grid = self._apply_move_on_grid(grid, block, row, col)
+                suffix = self._find_solvable_hand_sequence(next_grid, depth - 1)
+                if suffix is not None:
+                    return [key] + suffix
+
+        return None
 
     def get_new_hand(self):
-        """Generare corectă folosind clasificarea din blocks.py"""
-        empty_spaces = 64 - np.sum(self.grid)
-        empty_ratio = empty_spaces / 64.0
-        
-        # Ponderi de Mărime (Se adaptează)
-        m_large = (empty_ratio ** 2) * 2.5 
-        m_medium = 1.0
-        m_small = 1.0 + ((1.0 - empty_ratio) * 3.5)
+        """Generează o mână complet jucabilă, inclusiv secvențe care cer clear între piese."""
+        hand_keys = self._find_solvable_hand_sequence(self.grid.copy(), depth=3)
 
-        # Ponderi de Complexitate (Fixe)
-        base_comp_weights = {'simple': 10.0, 'medium': 5.0, 'hard': 3.0}
+        if hand_keys is None:
+            self.available = [False, False, False]
+            return False
 
-        keys = list(SHAPES.keys())
-        weights = []
-        
-        # Calculăm greutatea finală instantaneu
-        for k in keys:
-            size, comp = self._get_piece_info(k)
-            w = base_comp_weights[comp]
-            
-            if size == 'small': w *= m_small
-            elif size == 'medium': w *= m_medium
-            elif size == 'large': w *= m_large
-            weights.append(w)
-
-        # Oracolul de siguranță
-        for attempt in range(30):
-            temp_keys = random.choices(keys, weights=weights, k=3)
-            temp_hand = [SHAPES[k] for k in temp_keys]
-            
-            if any(self._can_fit_anywhere(b) for b in temp_hand):
-                self.hand = temp_hand
-                self.available = [True, True, True]
-                return 
-        
-        self.hand = temp_hand
+        self.hand = [SHAPES[key] for key in hand_keys]
         self.available = [True, True, True]
+        return True
 
     def _can_fit_anywhere(self, block):
         bh, bw = block.shape
@@ -91,11 +115,11 @@ class BlockBlastLogic:
 
     def step(self, hand_index, row, col):
         if not self.available[hand_index]:
-            return False, False, 0, [], []
+            return False, False, 0, [], [], False
             
         block = self.hand[hand_index]
         if not self.can_place(block, row, col):
-            return False, False, 0, [], []
+            return False, False, 0, [], [], False
             
         block_h, block_w = block.shape
         self.grid[row:row+block_h, col:col+block_w] += block
@@ -103,14 +127,16 @@ class BlockBlastLogic:
         self.blocks_placed += 1 
         
         lines_cleared, f_rows, f_cols = self.clear_lines()
+        stage_completed = False
         
         if not any(self.available):
-            self.get_new_hand()
-            self.stages_passed += 1 
+            if self.get_new_hand():
+                self.stages_passed += 1
+                stage_completed = True
             
         is_game_over = self.check_game_over()
         
-        return True, is_game_over, lines_cleared, f_rows, f_cols
+        return True, is_game_over, lines_cleared, f_rows, f_cols, stage_completed
 
     def check_game_over(self):
         for i, is_avail in enumerate(self.available):
