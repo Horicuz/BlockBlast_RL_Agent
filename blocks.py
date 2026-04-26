@@ -168,3 +168,17 @@ COMPLEXITY_CATEGORIES = {
         "big_T_up", "big_T_down", "big_T_left", "big_T_right"
     ]
 }
+
+TRAINING_POOLS = {
+    "all": list(SHAPES.keys()),
+    "simple": COMPLEXITY_CATEGORIES["simple"],
+    "simple_small": [
+        "line_1x2", "line_2x1", "line_1x3", "line_3x1",
+        "square_2x2",
+    ],
+    "small": SIZE_CATEGORIES["small"],
+    "medium_size": SIZE_CATEGORIES["medium"],
+    "large": SIZE_CATEGORIES["large"],
+    "medium_complexity": COMPLEXITY_CATEGORIES["medium"],
+    "hard": COMPLEXITY_CATEGORIES["hard"],
+}

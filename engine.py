@@ -3,8 +3,11 @@ import random
 from blocks import SHAPES
 
 class BlockBlastLogic:
-    def __init__(self, rng=None):
+    def __init__(self, rng=None, shape_keys=None, hand_generator="solvable", max_hand_attempts=50):
         self.rng = rng or random.Random()
+        self.shape_keys = list(shape_keys or SHAPES.keys())
+        self.hand_generator = hand_generator
+        self.max_hand_attempts = max_hand_attempts
         self.grid = np.zeros((8, 8), dtype=int)
         self.stages_passed = 0
         self.lines_destroyed = 0
@@ -16,7 +19,7 @@ class BlockBlastLogic:
             raise RuntimeError("Nu s-a putut genera o mana initiala solvabila.")
 
     def _shuffled_keys(self):
-        keys = list(SHAPES.keys())
+        keys = list(self.shape_keys)
         self.rng.shuffle(keys)
         return keys
 
@@ -71,8 +74,64 @@ class BlockBlastLogic:
 
         return None
 
+    def _random_hand_keys(self):
+        return [self.rng.choice(self.shape_keys) for _ in range(3)]
+
+    def _has_any_legal_move_for_keys(self, hand_keys):
+        for key in hand_keys:
+            if self._get_legal_moves_on_grid(self.grid, SHAPES[key]):
+                return True
+        return False
+
+    def _get_random_hand_with_playable_piece(self):
+        """
+        Generate a random hand, but guarantee at least one piece can be placed.
+
+        This is much cheaper than solving the full 3-piece sequence and closer to
+        a gentle game generator: the player gets a chance, but not a guaranteed
+        perfect route through the whole hand.
+        """
+        for _ in range(self.max_hand_attempts):
+            hand_keys = self._random_hand_keys()
+            if self._has_any_legal_move_for_keys(hand_keys):
+                return hand_keys
+
+        fitting_keys = [
+            key for key in self.shape_keys
+            if self._get_legal_moves_on_grid(self.grid, SHAPES[key])
+        ]
+        if not fitting_keys:
+            return None
+
+        hand_keys = [self.rng.choice(fitting_keys)]
+        hand_keys.extend(self.rng.choice(self.shape_keys) for _ in range(2))
+        self.rng.shuffle(hand_keys)
+        return hand_keys
+
     def get_new_hand(self):
-        """Generează o mână complet jucabilă, inclusiv secvențe care cer clear între piese."""
+        """Generează o mână nouă folosind strategia configurată."""
+        if self.hand_generator == "random":
+            hand_keys = self._random_hand_keys()
+        elif self.hand_generator == "playable":
+            hand_keys = self._get_random_hand_with_playable_piece()
+        elif self.hand_generator == "solvable":
+            hand_keys = self._find_solvable_hand_sequence(self.grid.copy(), depth=3)
+        else:
+            raise ValueError(f"Generator de mana necunoscut: {self.hand_generator}")
+
+        if hand_keys is None:
+            self.available = [False, False, False]
+            return False
+
+        if self.hand_generator == "solvable":
+            self.rng.shuffle(hand_keys)
+
+        self.hand = [SHAPES[key] for key in hand_keys]
+        self.available = [True, True, True]
+        return True
+
+    def get_new_solvable_hand(self):
+        """Backward-compatible alias for older experiments."""
         hand_keys = self._find_solvable_hand_sequence(self.grid.copy(), depth=3)
 
         if hand_keys is None:

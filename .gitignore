@@ -16,4 +16,8 @@ venv/
 # Local dev artifacts
 tensorboard_logs/
 checkpoints/cnn_holes/
+checkpoints/cnn_single_match/
+checkpoints/cnn_curriculum/
+checkpoints/fast/
+run_logs/
 .codex

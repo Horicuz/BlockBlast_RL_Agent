@@ -7,6 +7,7 @@ from engine import BlockBlastLogic
 
 import torch
 import torch.nn as nn
+from blocks import TRAINING_POOLS
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
 
@@ -81,9 +82,24 @@ class CustomCNNExtractor(BaseFeaturesExtractor):
 
 
 class BlockBlastEnv(gym.Env):
-    def __init__(self, reward_config=None, apply_hole_penalty=False):
+    def __init__(
+        self,
+        reward_config=None,
+        apply_hole_penalty=False,
+        fixed_game_seed=None,
+        shape_pool="all",
+        hand_generator="solvable",
+    ):
         super(BlockBlastEnv, self).__init__()
-        self.game = BlockBlastLogic(rng=self._new_game_rng())
+        self.fixed_game_seed = fixed_game_seed
+        self.shape_pool = shape_pool
+        self.hand_generator = hand_generator
+        self.shape_keys = TRAINING_POOLS[shape_pool]
+        self.game = BlockBlastLogic(
+            rng=self._new_game_rng(),
+            shape_keys=self.shape_keys,
+            hand_generator=self.hand_generator,
+        )
         self.action_space = spaces.Discrete(192)
         self.apply_hole_penalty = apply_hole_penalty
         
@@ -111,6 +127,8 @@ class BlockBlastEnv(gym.Env):
             self.reward_config.update(reward_config)
 
     def _new_game_rng(self):
+        if self.fixed_game_seed is not None:
+            return random.Random(self.fixed_game_seed)
         seed = int(self.np_random.integers(0, 2**32 - 1))
         return random.Random(seed)
 
@@ -213,7 +231,11 @@ class BlockBlastEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        self.game = BlockBlastLogic(rng=self._new_game_rng())
+        self.game = BlockBlastLogic(
+            rng=self._new_game_rng(),
+            shape_keys=self.shape_keys,
+            hand_generator=self.hand_generator,
+        )
         return self._get_obs(), {}
 
     def step(self, action):

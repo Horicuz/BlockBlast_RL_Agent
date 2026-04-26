@@ -107,3 +107,27 @@ tensorboard --logdir=./tensorboard_logs/
 ## Note
 - Dacă vrei comparatie curată, folosește două `model-path` diferite.
 - Dacă vrei să continui același experiment, folosește același `model-path` și `--resume`.
+
+## Experiment alternativ rapid
+
+Codul pentru experimentul rapid stă în `fast_variant/`. Folosește un engine separat pe bitboard, mâini random fără solver recursiv și `MaskablePPO` cu MLP feature-rich. Este util ca experiment local rapid în paralel cu training-ul CNN de pe Mac.
+
+```bash
+MPLCONFIGDIR=/tmp/matplotlib python3 -m fast_variant.train_fast \
+  --device cpu \
+  --vec-env subproc \
+  --subproc-start-method fork \
+  --num-cpu 8 \
+  --torch-threads 2 \
+  --total-timesteps 25000000 \
+  --model-path ./checkpoints/fast/block_blast_fast_mlp_v1 \
+  --tb-log-name PPO_BlockBlast_Fast_MLP_V1
+```
+
+Benchmark local observat:
+- `num_cpu=4`: ~2745 FPS
+- `num_cpu=6`: ~3441 FPS
+- `num_cpu=8`: ~3767 FPS
+- `num_cpu=12`: ~4271 FPS
+
+Pe Ryzen 9 5900X local, `num_cpu=12` a fost cel mai rapid în benchmark-ul scurt. Dacă FPS-ul scade după mai mult timp, revino la `num_cpu=8`, care are overhead mai mic.

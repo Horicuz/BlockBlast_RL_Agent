@@ -5,6 +5,7 @@ import time
 import gymnasium as gym
 import numpy as np
 import torch
+from blocks import TRAINING_POOLS
 from env import BlockBlastEnv, CustomCNNExtractor
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.wrappers import ActionMasker
@@ -59,6 +60,8 @@ class StageEvalCallback(BaseCallback):
     def __init__(
         self,
         reward_config,
+        fixed_game_seed=None,
+        fixed_game_seeds=None,
         eval_freq=0,
         n_eval_episodes=50,
         max_eval_steps=5000,
@@ -67,6 +70,10 @@ class StageEvalCallback(BaseCallback):
     ):
         super().__init__(verbose)
         self.reward_config = reward_config
+        self.fixed_game_seed = fixed_game_seed
+        self.fixed_game_seeds = fixed_game_seeds
+        self.shape_pool = reward_config["shape_pool"]
+        self.hand_generator = reward_config["hand_generator"]
         self.eval_freq = eval_freq
         self.n_eval_episodes = n_eval_episodes
         self.max_eval_steps = max_eval_steps
@@ -104,10 +111,15 @@ class StageEvalCallback(BaseCallback):
         eval_env = BlockBlastEnv(
             reward_config=self.reward_config,
             apply_hole_penalty=self.reward_config["apply_hole_penalty"],
+            fixed_game_seed=self.fixed_game_seed,
+            shape_pool=self.shape_pool,
+            hand_generator=self.hand_generator,
         )
 
         try:
             for episode_idx in range(self.n_eval_episodes):
+                if self.fixed_game_seeds:
+                    eval_env.fixed_game_seed = self.fixed_game_seeds[episode_idx % len(self.fixed_game_seeds)]
                 obs, _ = eval_env.reset(seed=10_000 + episode_idx)
                 done = False
                 step_count = 0
@@ -131,11 +143,14 @@ class StageEvalCallback(BaseCallback):
         return np.array(stages), np.array(lines), np.array(blocks)
 
 
-def make_env(reward_config):
+def make_env(reward_config, fixed_game_seed=None):
     def _init():
         env = BlockBlastEnv(
             reward_config=reward_config,
             apply_hole_penalty=reward_config["apply_hole_penalty"],
+            fixed_game_seed=fixed_game_seed,
+            shape_pool=reward_config["shape_pool"],
+            hand_generator=reward_config["hand_generator"],
         )
         env = Monitor(env)
         env = ActionMasker(env, mask_fn)
@@ -182,9 +197,31 @@ def parse_args():
     parser.add_argument("--eval-freq", type=int, default=500_000)
     parser.add_argument("--eval-episodes", type=int, default=100)
     parser.add_argument("--max-eval-steps", type=int, default=5000)
+    parser.add_argument("--fixed-game-seed", type=int, default=None)
+    parser.add_argument("--fixed-game-seeds", default=None, help="Comma-separated seeds, assigned across envs and eval episodes.")
+    parser.add_argument("--fixed-game-seed-count", type=int, default=0, help="Use fixed-game-seed as the first seed and generate this many consecutive seeds.")
+    parser.add_argument("--init-from-model", default=None, help="Initialize policy weights from this model path, but keep current hyperparameters.")
+    parser.add_argument("--shape-pool", choices=sorted(TRAINING_POOLS.keys()), default="all")
+    parser.add_argument("--hand-generator", choices=["solvable", "playable", "random"], default="solvable")
 
     parser.add_argument("--torch-threads", type=int, default=0)
     return parser.parse_args()
+
+
+def normalize_model_path(path: str) -> str:
+    if path.endswith(".zip"):
+        return path[:-4]
+    return path
+
+
+def parse_fixed_game_seeds(args):
+    if args.fixed_game_seeds:
+        return [int(value.strip()) for value in args.fixed_game_seeds.split(",") if value.strip()]
+    if args.fixed_game_seed is not None and args.fixed_game_seed_count > 0:
+        return [args.fixed_game_seed + offset for offset in range(args.fixed_game_seed_count)]
+    if args.fixed_game_seed is not None:
+        return [args.fixed_game_seed]
+    return None
 
 
 def resolve_device(choice: str) -> str:
@@ -202,8 +239,13 @@ def resolve_device(choice: str) -> str:
     return "cpu"
 
 
-def build_vec_env(vec_env_kind: str, num_cpu: int, reward_config, start_method: str = "fork"):
-    env_fns = [make_env(reward_config) for _ in range(num_cpu)]
+def build_vec_env(vec_env_kind: str, num_cpu: int, reward_config, start_method: str = "fork", fixed_game_seed=None, fixed_game_seeds=None):
+    env_fns = []
+    for env_index in range(num_cpu):
+        env_seed = fixed_game_seed
+        if fixed_game_seeds:
+            env_seed = fixed_game_seeds[env_index % len(fixed_game_seeds)]
+        env_fns.append(make_env(reward_config, fixed_game_seed=env_seed))
     if vec_env_kind == "dummy":
         return DummyVecEnv(env_fns)
     return SubprocVecEnv(env_fns, start_method=start_method)
@@ -231,6 +273,8 @@ def build_reward_config(args):
         "apply_hole_penalty": args.apply_hole_penalty,
         "hole_penalty_weight": args.hole_penalty_weight,
         "created_hole_penalty_weight": args.created_hole_penalty_weight,
+        "shape_pool": args.shape_pool,
+        "hand_generator": args.hand_generator,
     }
 
 
@@ -256,6 +300,7 @@ def ensure_parent_dir(path: str):
 def build_model(env, device: str, args):
     model_exists = os.path.exists(args.model_path + ".zip")
     should_resume = args.resume and model_exists
+    init_from_model = normalize_model_path(args.init_from_model) if args.init_from_model else None
 
     policy_kwargs = dict(
         features_extractor_class=CustomCNNExtractor,
@@ -268,7 +313,11 @@ def build_model(env, device: str, args):
         print("ℹ️ Pentru modelul încărcat, hiperparametrii salvați rămân activi. Dacă vrei setări complet noi, folosește --no-resume.")
         return model, True
 
-    print("🧠 Inițializăm un model nou de la zero...")
+    if init_from_model:
+        print("🧠 Inițializăm model nou cu hiperparametrii curenți și greutăți preluate din modelul indicat...")
+    else:
+        print("🧠 Inițializăm un model nou de la zero...")
+
     model = MaskablePPO(
         "MultiInputPolicy",
         env,
@@ -283,6 +332,14 @@ def build_model(env, device: str, args):
         device=device,
         policy_kwargs=policy_kwargs,
     )
+
+    if init_from_model:
+        if not os.path.exists(init_from_model + ".zip"):
+            raise FileNotFoundError(f"Nu există modelul pentru init-from-model: {init_from_model}.zip")
+        source_model = MaskablePPO.load(init_from_model, device=device)
+        model.policy.load_state_dict(source_model.policy.state_dict())
+        print(f"✅ Greutăți încărcate din: {init_from_model}.zip")
+
     return model, False
 
 
@@ -296,6 +353,8 @@ def build_training_callbacks(args, reward_config):
         callbacks.append(
             StageEvalCallback(
                 reward_config=reward_config,
+                fixed_game_seed=args.fixed_game_seed,
+                fixed_game_seeds=args.resolved_fixed_game_seeds,
                 eval_freq=args.eval_freq,
                 n_eval_episodes=args.eval_episodes,
                 max_eval_steps=args.max_eval_steps,
@@ -404,6 +463,7 @@ def run_benchmark(args, reward_config):
 
 def main():
     args = parse_args()
+    args.resolved_fixed_game_seeds = parse_fixed_game_seeds(args)
 
     if args.torch_threads <= 0:
         args.torch_threads = max(1, min(4, (os.cpu_count() or 1) // 2))
@@ -421,8 +481,21 @@ def main():
     print(f"📦 Model path: {args.model_path}.zip")
     print(f"🧱 Checkpoint dir: {args.checkpoint_dir}")
     print(f"🕳️ Hole penalty: {'ENABLED' if args.apply_hole_penalty else 'DISABLED'}")
+    print(f"🧩 Shape pool: {args.shape_pool} ({len(TRAINING_POOLS[args.shape_pool])} piese)")
+    print(f"🎲 Hand generator: {args.hand_generator}")
+    if args.resolved_fixed_game_seeds:
+        preview = ", ".join(str(seed) for seed in args.resolved_fixed_game_seeds[:12])
+        suffix = "" if len(args.resolved_fixed_game_seeds) <= 12 else ", ..."
+        print(f"🎯 Fixed game seeds: {preview}{suffix} ({len(args.resolved_fixed_game_seeds)} seed-uri)")
 
-    env = build_vec_env(args.vec_env, args.num_cpu, reward_config, args.subproc_start_method)
+    env = build_vec_env(
+        args.vec_env,
+        args.num_cpu,
+        reward_config,
+        args.subproc_start_method,
+        fixed_game_seed=args.fixed_game_seed,
+        fixed_game_seeds=args.resolved_fixed_game_seeds,
+    )
     model, resumed = build_model(env, device, args)
 
     print("🏁 Începem antrenamentul...")
