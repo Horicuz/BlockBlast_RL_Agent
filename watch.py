@@ -40,7 +40,7 @@ SHAPE_KEYS = list(SHAPES.keys())
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Watch and inspect a trained Block Blast model")
-    parser.add_argument("--model-path", default="block_blast_ai_v4", help="Model path, cu sau fara .zip")
+    parser.add_argument("--model-path", default="checkpoints/best_phase2_v1/best_model", help="Model path, cu sau fara .zip")
     return parser.parse_args()
 
 

@@ -10,12 +10,13 @@ class BlockBlastEnv(gym.Env):
         self.action_space = spaces.Discrete(192)
 
         self.reward_config = {
-            "placement_reward": 0.5,
-            "line_clear_scale": 12.0,
-            "line_clear_bonus": 2.0,
-            "board_control_weight": 0.3,
-            "near_line_weight": 1.0,
-            "game_over_penalty": 120.0,
+            "placement_reward": 0.0,
+            "line_clear_scale": 10.0,
+            "line_clear_bonus": 0.0,
+            "stage_complete_reward": 10.0,
+            "no_line_penalty": 0.0,
+            "game_over_penalty": 200.0,
+            "game_over_early_weight": 3.0,
             "reward_scale": 1.0,
         }
         if reward_config:
@@ -56,43 +57,31 @@ class BlockBlastEnv(gym.Env):
         self.game = BlockBlastLogic()
         return self._get_obs(), {}
 
-    def _count_near_complete_lines(self):
-        row_fill = np.sum(self.game.grid, axis=1)
-        col_fill = np.sum(self.game.grid, axis=0)
-        return int(np.count_nonzero(row_fill == 7) + np.count_nonzero(col_fill == 7))
-
     def step(self, action):
         hand_index = action // 64
         remainder = action % 64
         row = remainder // 8
         col = remainder % 8
-
-        filled_before = int(np.sum(self.game.grid))
-        near_lines_before = self._count_near_complete_lines()
         
-        is_valid, is_game_over, lines_cleared, f_rows, f_cols = self.game.step(hand_index, row, col)
-
-        filled_after = int(np.sum(self.game.grid))
-        near_lines_after = self._count_near_complete_lines()
+        is_valid, is_game_over, lines_cleared, f_rows, f_cols, stage_completed = self.game.step(hand_index, row, col)
 
         cfg = self.reward_config
         
         reward = 0.0
         if is_valid:
-            reward += cfg["placement_reward"]
-
             if lines_cleared > 0:
                 reward += (lines_cleared ** 2) * cfg["line_clear_scale"]
                 reward += lines_cleared * cfg["line_clear_bonus"]
             else:
-                # Bonus mic pentru mutări care pregătesc o linie aproape completă.
-                reward += (near_lines_after - near_lines_before) * cfg["near_line_weight"]
+                reward += cfg["placement_reward"]
+                reward -= cfg["no_line_penalty"]
 
-            # Bonus când mutarea reduce presiunea de pe board.
-            reward += (filled_before - filled_after) * cfg["board_control_weight"]
+            if stage_completed:
+                reward += cfg["stage_complete_reward"]
 
         if is_game_over:
-            reward -= cfg["game_over_penalty"]
+            early_loss_multiplier = 1.0 + (cfg["game_over_early_weight"] / (self.game.stages_passed + 1))
+            reward -= cfg["game_over_penalty"] * early_loss_multiplier
 
         reward *= cfg["reward_scale"]
 
