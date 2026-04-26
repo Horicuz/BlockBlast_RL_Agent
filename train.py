@@ -11,45 +11,6 @@ from stable_baselines3.common.callbacks import BaseCallback, CallbackList, Check
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
-CURRICULUM_PRESETS = {
-    "phase1": {
-        "model_path": "./checkpoints/phase1/block_blast_phase1_v1",
-        "tb_log_name": "PPO_BlockBlast_Phase1_V1",
-        "checkpoint_dir": "./checkpoints/phase1/",
-        "total_timesteps": 15_000_000,
-        "reward_stage_complete": 15.0,
-        "reward_game_over": 180.0,
-        "reward_game_over_early_weight": 2.5,
-    },
-    "phase2": {
-        "model_path": "./checkpoints/phase2/block_blast_phase2_v1",
-        "tb_log_name": "PPO_BlockBlast_Phase2_V1",
-        "checkpoint_dir": "./checkpoints/phase2/",
-        "total_timesteps": 20_000_000,
-        "reward_stage_complete": 8.0,
-        "reward_game_over": 260.0,
-        "reward_game_over_early_weight": 3.0,
-    },
-    "phase3": {
-        "model_path": "./checkpoints/phase3/block_blast_phase3_v1",
-        "tb_log_name": "PPO_BlockBlast_Phase3_V1",
-        "checkpoint_dir": "./checkpoints/phase3/",
-        "total_timesteps": 25_000_000,
-        "reward_stage_complete": 3.0,
-        "reward_game_over": 350.0,
-        "reward_game_over_early_weight": 3.0,
-    },
-    "roundsafe": {
-        "model_path": "./checkpoints/roundsafe/block_blast_roundsafe_v1",
-        "tb_log_name": "PPO_BlockBlast_RoundSafe_V1",
-        "checkpoint_dir": "./checkpoints/roundsafe/",
-        "total_timesteps": 25_000_000,
-        "reward_stage_complete": 10.0,
-        "reward_game_over": 220.0,
-        "reward_game_over_early_weight": 3.0,
-    },
-}
-
 def mask_fn(env: gym.Env):
     if hasattr(env, "valid_action_mask"):
         return env.valid_action_mask()
@@ -91,7 +52,6 @@ def make_env(reward_config):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train or benchmark the Block Blast PPO agent")
-    parser.add_argument("--curriculum-phase", choices=["phase1", "phase2", "phase3", "roundsafe", "custom"], default="phase1")
     parser.add_argument("--device", choices=["auto", "cpu", "cuda", "mps"], default="auto")
     parser.add_argument("--vec-env", choices=["subproc", "dummy"], default="subproc")
     parser.add_argument("--num-cpu", type=int, default=8)
@@ -106,10 +66,10 @@ def parse_args():
     parser.add_argument("--total-timesteps", type=int, default=25_000_000)
     parser.add_argument("--benchmark", action="store_true")
     parser.add_argument("--benchmark-steps", type=int, default=30_000)
-    parser.add_argument("--model-path", default="./checkpoints/roundsafe/block_blast_roundsafe_v1")
-    parser.add_argument("--tb-log-name", default="PPO_BlockBlast_RoundSafe_V1")
+    parser.add_argument("--model-path", default="./checkpoints/cnn/block_blast_cnn_v1")
+    parser.add_argument("--tb-log-name", default="PPO_BlockBlast_CNN_V1")
     parser.add_argument("--log-dir", default="./tensorboard_logs/")
-    parser.add_argument("--checkpoint-dir", default="./checkpoints/")
+    parser.add_argument("--checkpoint-dir", default="./checkpoints/cnn/")
     parser.add_argument("--checkpoint-freq", type=int, default=0)
     parser.add_argument("--resume", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--log-stats", action=argparse.BooleanOptionalAction, default=True)
@@ -153,20 +113,6 @@ def build_vec_env(vec_env_kind: str, num_cpu: int, reward_config):
 def configure_torch_threads(thread_count: int):
     if thread_count > 0:
         torch.set_num_threads(thread_count)
-
-
-def apply_curriculum_preset(args):
-    if args.curriculum_phase == "custom":
-        return
-
-    preset = CURRICULUM_PRESETS[args.curriculum_phase]
-    args.model_path = preset["model_path"]
-    args.tb_log_name = preset["tb_log_name"]
-    args.checkpoint_dir = preset["checkpoint_dir"]
-    args.total_timesteps = preset["total_timesteps"]
-    args.reward_stage_complete = preset["reward_stage_complete"]
-    args.reward_game_over = preset["reward_game_over"]
-    args.reward_game_over_early_weight = preset["reward_game_over_early_weight"]
 
 
 def build_reward_config(args):
@@ -334,7 +280,6 @@ def run_benchmark(args, reward_config):
 
 def main():
     args = parse_args()
-    apply_curriculum_preset(args)
 
     if args.torch_threads <= 0:
         args.torch_threads = max(1, min(4, (os.cpu_count() or 1) // 2))
@@ -348,7 +293,6 @@ def main():
 
     device = resolve_device(args.device)
     print(f"🚀 Antrenament pe: {device.upper()}")
-    print(f"🧭 Curriculum phase: {args.curriculum_phase}")
     print(f"⚡ Se pornesc {args.num_cpu} instanțe de joc în paralel...")
     print(f"📦 Model path: {args.model_path}.zip")
     print(f"🧱 Checkpoint dir: {args.checkpoint_dir}")
