@@ -36,8 +36,10 @@ class TensorboardStatsCallback(BaseCallback):
         scalar_keys = [
             "reward/line",
             "reward/stage",
+            "reward/contact",
             "reward/holes",
             "reward/game_over",
+            "placement/contact_ratio",
             "holes/current_cells",
             "holes/created_cells",
             "game/valid_actions",
@@ -190,10 +192,15 @@ def parse_args():
     parser.add_argument("--reward-no-line", type=float, default=0.0)
     parser.add_argument("--reward-game-over", type=float, default=200.0)
     parser.add_argument("--reward-game-over-early-weight", type=float, default=3.0)
+    parser.add_argument("--reward-contact-scale", type=float, default=12.0)
+    parser.add_argument("--reward-contact-power", type=float, default=1.25)
     parser.add_argument("--reward-scale", type=float, default=1.0)
     parser.add_argument("--apply-hole-penalty", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--hole-penalty-weight", type=float, default=0.25)
     parser.add_argument("--created-hole-penalty-weight", type=float, default=1.0)
+    parser.add_argument("--complexity-simple-prob", type=float, default=0.62)
+    parser.add_argument("--complexity-medium-prob", type=float, default=0.28)
+    parser.add_argument("--complexity-hard-prob", type=float, default=0.10)
     parser.add_argument("--eval-freq", type=int, default=500_000)
     parser.add_argument("--eval-episodes", type=int, default=100)
     parser.add_argument("--max-eval-steps", type=int, default=5000)
@@ -202,7 +209,7 @@ def parse_args():
     parser.add_argument("--fixed-game-seed-count", type=int, default=0, help="Use fixed-game-seed as the first seed and generate this many consecutive seeds.")
     parser.add_argument("--init-from-model", default=None, help="Initialize policy weights from this model path, but keep current hyperparameters.")
     parser.add_argument("--shape-pool", choices=sorted(TRAINING_POOLS.keys()), default="all")
-    parser.add_argument("--hand-generator", choices=["solvable", "playable", "random"], default="solvable")
+    parser.add_argument("--hand-generator", choices=["solvable", "playable", "adaptive_playable", "random"], default="solvable")
 
     parser.add_argument("--torch-threads", type=int, default=0)
     return parser.parse_args()
@@ -269,10 +276,15 @@ def build_reward_config(args):
         "no_line_penalty": args.reward_no_line,
         "game_over_penalty": args.reward_game_over,
         "game_over_early_weight": args.reward_game_over_early_weight,
+        "contact_reward_scale": args.reward_contact_scale,
+        "contact_reward_power": args.reward_contact_power,
         "reward_scale": args.reward_scale,
         "apply_hole_penalty": args.apply_hole_penalty,
         "hole_penalty_weight": args.hole_penalty_weight,
         "created_hole_penalty_weight": args.created_hole_penalty_weight,
+        "complexity_simple_prob": args.complexity_simple_prob,
+        "complexity_medium_prob": args.complexity_medium_prob,
+        "complexity_hard_prob": args.complexity_hard_prob,
         "shape_pool": args.shape_pool,
         "hand_generator": args.hand_generator,
     }

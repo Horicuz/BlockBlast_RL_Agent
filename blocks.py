@@ -182,3 +182,17 @@ TRAINING_POOLS = {
     "medium_complexity": COMPLEXITY_CATEGORIES["medium"],
     "hard": COMPLEXITY_CATEGORIES["hard"],
 }
+
+SIZE_BY_SHAPE = {}
+for _size_name, _shape_keys in SIZE_CATEGORIES.items():
+    for _shape_key in _shape_keys:
+        SIZE_BY_SHAPE[_shape_key] = _size_name
+
+COMPLEXITY_BY_SHAPE = {}
+for _complexity_name, _shape_keys in COMPLEXITY_CATEGORIES.items():
+    for _shape_key in _shape_keys:
+        COMPLEXITY_BY_SHAPE[_shape_key] = _complexity_name
+
+for _shape_key in SHAPES:
+    SIZE_BY_SHAPE.setdefault(_shape_key, "medium")
+    COMPLEXITY_BY_SHAPE.setdefault(_shape_key, "medium")

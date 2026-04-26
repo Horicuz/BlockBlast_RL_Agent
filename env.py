@@ -99,6 +99,7 @@ class BlockBlastEnv(gym.Env):
             rng=self._new_game_rng(),
             shape_keys=self.shape_keys,
             hand_generator=self.hand_generator,
+            complexity_weights=self._complexity_weights_from_reward_config(reward_config),
         )
         self.action_space = spaces.Discrete(192)
         self.apply_hole_penalty = apply_hole_penalty
@@ -122,9 +123,24 @@ class BlockBlastEnv(gym.Env):
             "reward_scale": 1.0,
             "hole_penalty_weight": 0.25,
             "created_hole_penalty_weight": 1.0,
+            "contact_reward_scale": 12.0,
+            "contact_reward_power": 1.25,
+            "complexity_simple_prob": 0.62,
+            "complexity_medium_prob": 0.28,
+            "complexity_hard_prob": 0.10,
         }
         if reward_config:
             self.reward_config.update(reward_config)
+
+    @staticmethod
+    def _complexity_weights_from_reward_config(reward_config):
+        if not reward_config:
+            return None
+        return {
+            "simple": reward_config.get("complexity_simple_prob", 0.62),
+            "medium": reward_config.get("complexity_medium_prob", 0.28),
+            "hard": reward_config.get("complexity_hard_prob", 0.10),
+        }
 
     def _new_game_rng(self):
         if self.fixed_game_seed is not None:
@@ -229,12 +245,53 @@ class BlockBlastEnv(gym.Env):
             "available": np.array(self.game.available, dtype=np.int8)
         }
 
+    def _calculate_contact_stats(self, previous_grid, block, row, col):
+        """
+        Compute how much of the placed piece perimeter touches either board edges
+        or already-filled board cells. Internal piece edges are ignored.
+        """
+        block_h, block_w = block.shape
+        touching_edges = 0
+        external_edges = 0
+
+        for br in range(block_h):
+            for bc in range(block_w):
+                if block[br, bc] == 0:
+                    continue
+
+                board_r = row + br
+                board_c = col + bc
+
+                for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    nbr_br = br + dr
+                    nbr_bc = bc + dc
+
+                    if 0 <= nbr_br < block_h and 0 <= nbr_bc < block_w and block[nbr_br, nbr_bc] == 1:
+                        continue
+
+                    external_edges += 1
+                    nbr_r = board_r + dr
+                    nbr_c = board_c + dc
+                    if nbr_r < 0 or nbr_r >= 8 or nbr_c < 0 or nbr_c >= 8:
+                        touching_edges += 1
+                        continue
+                    if previous_grid[nbr_r, nbr_c] == 1:
+                        touching_edges += 1
+
+        ratio = 0.0 if external_edges == 0 else (touching_edges / external_edges)
+        return {
+            "touching_edges": touching_edges,
+            "external_edges": external_edges,
+            "contact_ratio": ratio,
+        }
+
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.game = BlockBlastLogic(
             rng=self._new_game_rng(),
             shape_keys=self.shape_keys,
             hand_generator=self.hand_generator,
+            complexity_weights=self._complexity_weights_from_reward_config(self.reward_config),
         )
         return self._get_obs(), {}
 
@@ -244,6 +301,9 @@ class BlockBlastEnv(gym.Env):
         row = remainder // 8
         col = remainder % 8
         previous_grid = self.game.grid.copy()
+        placed_block = None
+        if 0 <= hand_index < len(self.game.hand):
+            placed_block = self.game.hand[hand_index].copy()
         
         is_valid, is_game_over, lines_cleared, f_rows, f_cols, stage_completed = self.game.step(hand_index, row, col)
         
@@ -251,15 +311,28 @@ class BlockBlastEnv(gym.Env):
         reward = 0.0
         reward_line = 0.0
         reward_stage = 0.0
+        reward_contact = 0.0
         reward_holes = 0.0
         reward_game_over = 0.0
         hole_stats = {
-            "current_hole_cells": self._count_small_hole_cells(self.game.grid),
+            "current_hole_cells": 0,
             "previous_hole_cells": None,
             "created_hole_cells": 0,
         }
+        contact_stats = {
+            "touching_edges": 0,
+            "external_edges": 0,
+            "contact_ratio": 0.0,
+        }
         
         if is_valid:
+            if placed_block is not None:
+                contact_stats = self._calculate_contact_stats(previous_grid, placed_block, row, col)
+            reward_contact = (
+                contact_stats["contact_ratio"] ** cfg["contact_reward_power"]
+            ) * cfg["contact_reward_scale"]
+            reward += reward_contact
+
             if lines_cleared > 0:
                 reward_line = (lines_cleared ** 2) * cfg["line_clear_scale"]
                 reward_line += lines_cleared * cfg["line_clear_bonus"]
@@ -289,8 +362,11 @@ class BlockBlastEnv(gym.Env):
             "anim_cols": f_cols,
             "reward/line": reward_line * cfg["reward_scale"],
             "reward/stage": reward_stage * cfg["reward_scale"],
+            "reward/contact": reward_contact * cfg["reward_scale"],
             "reward/holes": reward_holes * cfg["reward_scale"],
             "reward/game_over": reward_game_over * cfg["reward_scale"],
+            "placement/contact_ratio": contact_stats["contact_ratio"],
+            "placement/touching_edges": contact_stats["touching_edges"],
             "holes/current_cells": hole_stats["current_hole_cells"],
             "holes/created_cells": hole_stats["created_hole_cells"],
             "game/valid_actions": int(self.valid_action_mask().sum()),
