@@ -29,9 +29,9 @@ class BlockBlastLogic:
     @staticmethod
     def _normalize_complexity_weights(weights):
         default_weights = {
-            "simple": 0.62,
-            "medium": 0.28,
-            "hard": 0.10,
+            "simple": 0.78,
+            "medium": 0.18,
+            "hard": 0.04,
         }
         if not weights:
             return default_weights
@@ -106,6 +106,11 @@ class BlockBlastLogic:
     def _random_hand_keys(self):
         return [self.rng.choice(self.shape_keys) for _ in range(3)]
 
+    def _difficulty_progress(self):
+        stage_progress = min(self.stages_passed / 35.0, 1.0)
+        placement_progress = min(self.blocks_placed / 105.0, 1.0)
+        return max(stage_progress, placement_progress)
+
     def _shape_size_weights(self):
         """
         Adapt shape-size probabilities to board occupancy.
@@ -113,42 +118,136 @@ class BlockBlastLogic:
         Less free space => bias towards small pieces.
         """
         free_ratio = float(np.count_nonzero(self.grid == 0)) / 64.0
-        if free_ratio >= 0.65:
-            return {"small": 0.20, "medium": 0.35, "large": 0.45}
-        if free_ratio >= 0.35:
-            return {"small": 0.35, "medium": 0.45, "large": 0.20}
-        return {"small": 0.65, "medium": 0.30, "large": 0.05}
+        progress = self._difficulty_progress()
 
-    def _adaptive_shape_weights(self):
+        if free_ratio >= 0.82:
+            return {
+                "small": 0.22 - (0.07 * progress),
+                "medium": 0.33 + (0.03 * progress),
+                "large": 0.45 + (0.04 * progress),
+            }
+        if free_ratio >= 0.68:
+            return {
+                "small": 0.30 - (0.08 * progress),
+                "medium": 0.42 + (0.04 * progress),
+                "large": 0.28 + (0.04 * progress),
+            }
+        if free_ratio >= 0.52:
+            return {
+                "small": 0.46 - (0.12 * progress),
+                "medium": 0.44 + (0.08 * progress),
+                "large": 0.10 + (0.04 * progress),
+            }
+        if free_ratio >= 0.38:
+            return {
+                "small": 0.68 - (0.16 * progress),
+                "medium": 0.31 + (0.155 * progress),
+                "large": 0.01 + (0.005 * progress),
+            }
+        if free_ratio >= 0.25:
+            return {
+                "small": 0.84 - (0.12 * progress),
+                "medium": 0.159 + (0.119 * progress),
+                "large": 0.001,
+            }
+        return {"small": 0.94, "medium": 0.06, "large": 0.0}
+
+    def _shape_preference_weight(self, key):
+        progress = self._difficulty_progress()
+        if key.startswith("line_"):
+            return 2.55 - (0.35 * progress)
+        if key == "square_2x2":
+            return 2.15
+        if key.startswith("rect_"):
+            return 1.90 + (0.20 * progress)
+        if key == "square_3x3":
+            return 0.42 + (0.45 * progress)
+        if key.startswith("corner_3"):
+            return 1.15
+        if key.startswith(("L_4", "J_4")):
+            return 1.00 + (0.35 * progress)
+        if key.startswith("big_L"):
+            return 0.52 + (0.30 * progress)
+        if key.startswith(("T_4", "big_T")):
+            return 0.62 + (0.75 * progress)
+        if key.startswith(("S_4", "Z_4")):
+            return 0.56 + (0.68 * progress)
+        if key.startswith("diag_"):
+            return 0.28 + (0.18 * progress)
+        return 1.0
+
+    def _board_density_shape_multiplier(self, key, free_ratio):
+        progress = self._difficulty_progress()
+        cell_count = int(np.count_nonzero(SHAPES[key]))
+        footprint_cells = int(SHAPES[key].shape[0] * SHAPES[key].shape[1])
+
+        if cell_count > 4:
+            if free_ratio < 0.25:
+                return 0.0
+            if free_ratio < 0.38:
+                return 0.01
+            if free_ratio < 0.52:
+                return 0.08 + (0.04 * progress)
+            if free_ratio < 0.68:
+                return 0.45 + (0.10 * progress)
+            return 1.0 + (0.15 * progress)
+
+        if footprint_cells >= 9 and free_ratio < 0.45:
+            return 0.35
+
+        return 1.0
+
+    def _complexity_progress_multiplier(self, shape_complexity):
+        progress = self._difficulty_progress()
+        if shape_complexity == "simple":
+            return 1.0 - (0.24 * progress)
+        if shape_complexity == "medium":
+            return 1.0 + (0.95 * progress)
+        if shape_complexity == "hard":
+            return 1.0 + (3.40 * progress)
+        return 1.0
+
+    def _adaptive_shape_weights(self, candidate_keys=None):
+        free_ratio = float(np.count_nonzero(self.grid == 0)) / 64.0
         size_weights = self._shape_size_weights()
-        shape_weights = {}
+        keys = list(candidate_keys or self.shape_keys)
+        weights = {}
 
-        for key in self.shape_keys:
+        for key in keys:
             shape_size = SIZE_BY_SHAPE.get(key, "medium")
             shape_complexity = COMPLEXITY_BY_SHAPE.get(key, "medium")
-            size_weight = size_weights.get(shape_size, 0.0)
-            complexity_weight = self.complexity_weights.get(shape_complexity, 0.0)
-            shape_weights[key] = max(size_weight * complexity_weight, 0.0)
+            weight = (
+                size_weights.get(shape_size, 0.0)
+                * self.complexity_weights.get(shape_complexity, 0.0)
+                * self._complexity_progress_multiplier(shape_complexity)
+                * self._shape_preference_weight(key)
+                * self._board_density_shape_multiplier(key, free_ratio)
+            )
+            weights[key] = max(weight, 0.0)
 
-        total = sum(shape_weights.values())
+        total = sum(weights.values())
+        if total <= 1e-9 and keys:
+            fallback = 1.0 / len(keys)
+            return {key: fallback for key in keys}
+
+        return weights
+
+    def _sample_weighted_shape_key(self, candidate_keys=None):
+        weights = self._adaptive_shape_weights(candidate_keys)
+        total = sum(weights.values())
         if total <= 1e-9:
-            fallback = 1.0 / max(len(self.shape_keys), 1)
-            return {key: fallback for key in self.shape_keys}
+            keys = list(candidate_keys or self.shape_keys)
+            return self.rng.choice(keys)
 
-        return {key: value / total for key, value in shape_weights.items()}
-
-    def _sample_weighted_shape_key(self, normalized_weights):
         cumulative = 0.0
-        target = self.rng.random()
-        for key, weight in normalized_weights.items():
+        target = self.rng.random() * total
+        for key, weight in weights.items():
+            if weight <= 0:
+                continue
             cumulative += weight
             if cumulative >= target:
                 return key
-        return self.shape_keys[-1]
-
-    def _adaptive_hand_keys(self):
-        normalized_weights = self._adaptive_shape_weights()
-        return [self._sample_weighted_shape_key(normalized_weights) for _ in range(3)]
+        return next(reversed(weights))
 
     def _has_any_legal_move_for_keys(self, hand_keys):
         for key in hand_keys:
@@ -186,9 +285,8 @@ class BlockBlastLogic:
         Generate a hand from adaptive weighted probabilities, while preserving
         the "at least one legal move exists" safety.
         """
-        normalized_weights = self._adaptive_shape_weights()
         for _ in range(self.max_hand_attempts):
-            hand_keys = [self._sample_weighted_shape_key(normalized_weights) for _ in range(3)]
+            hand_keys = [self._sample_weighted_shape_key() for _ in range(3)]
             if self._has_any_legal_move_for_keys(hand_keys):
                 return hand_keys
 
@@ -199,15 +297,8 @@ class BlockBlastLogic:
         if not fitting_keys:
             return None
 
-        fitting_weights = {key: normalized_weights.get(key, 0.0) for key in fitting_keys}
-        total = sum(fitting_weights.values())
-        if total <= 1e-9:
-            normalized_fitting_weights = {key: 1.0 / len(fitting_keys) for key in fitting_keys}
-        else:
-            normalized_fitting_weights = {key: value / total for key, value in fitting_weights.items()}
-
-        hand_keys = [self._sample_weighted_shape_key(normalized_fitting_weights)]
-        hand_keys.extend(self._sample_weighted_shape_key(normalized_weights) for _ in range(2))
+        hand_keys = [self._sample_weighted_shape_key(fitting_keys)]
+        hand_keys.extend(self._sample_weighted_shape_key() for _ in range(2))
         self.rng.shuffle(hand_keys)
         return hand_keys
 

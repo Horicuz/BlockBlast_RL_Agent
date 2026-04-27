@@ -81,6 +81,203 @@ class CustomCNNExtractor(BaseFeaturesExtractor):
         return output
 
 
+class ResidualConvBlock(nn.Module):
+    def __init__(self, channels: int):
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Conv2d(channels, channels, kernel_size=3, stride=1, padding=1),
+            nn.GroupNorm(8, channels),
+            nn.ReLU(),
+            nn.Conv2d(channels, channels, kernel_size=3, stride=1, padding=1),
+            nn.GroupNorm(8, channels),
+        )
+        self.activation = nn.ReLU()
+
+    def forward(self, x):
+        return self.activation(x + self.block(x))
+
+
+class CustomCNNExtractorV2(BaseFeaturesExtractor):
+    """
+    Deeper CNN feature extractor for the same Dict observation space.
+    Keeps full 8x8 resolution longer, then mixes board/action geometry with
+    hand metadata through a larger feature head.
+    """
+    def __init__(self, observation_space: spaces.Dict, features_dim: int = 512):
+        super().__init__(observation_space, features_dim)
+
+        board_shape = observation_space["board"].shape
+        legal_shape = observation_space["valid_actions"].shape
+        hand_shape = observation_space["hand"].shape
+
+        spatial_channels = board_shape[0] + legal_shape[0]
+        self.spatial_cnn = nn.Sequential(
+            nn.Conv2d(spatial_channels, 32, kernel_size=3, stride=1, padding=1),
+            nn.GroupNorm(8, 32),
+            nn.ReLU(),
+            ResidualConvBlock(32),
+            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.GroupNorm(8, 64),
+            nn.ReLU(),
+            ResidualConvBlock(64),
+            nn.Conv2d(64, 96, kernel_size=3, stride=1, padding=1),
+            nn.GroupNorm(8, 96),
+            nn.ReLU(),
+            ResidualConvBlock(96),
+            nn.Flatten(),
+        )
+
+        spatial_output_size = 96 * 8 * 8
+        hand_flat_size = np.prod(hand_shape)
+        self.hand_fc = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(hand_flat_size, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+        )
+        self.available_fc = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(3, 32),
+            nn.ReLU(),
+            nn.Linear(32, 16),
+            nn.ReLU(),
+        )
+
+        combined_size = spatial_output_size + 64 + 16
+        self.fc_combined = nn.Sequential(
+            nn.Linear(combined_size, 512),
+            nn.ReLU(),
+            nn.LayerNorm(512),
+            nn.Linear(512, features_dim),
+            nn.ReLU(),
+        )
+
+    def forward(self, observations):
+        board = observations["board"].float()
+        valid_actions = observations["valid_actions"].float()
+        hand = observations["hand"].float()
+        available = observations["available"].float()
+
+        spatial = torch.cat([board, valid_actions], dim=1)
+        spatial_features = self.spatial_cnn(spatial)
+        hand_features = self.hand_fc(hand)
+        available_features = self.available_fc(available)
+        combined = torch.cat([spatial_features, hand_features, available_features], dim=1)
+        return self.fc_combined(combined)
+
+
+class ActionAwareCNNExtractor(BaseFeaturesExtractor):
+    """
+    Action-aware extractor for the 8x8 board.
+
+    The older extractors mix all valid-action maps together early. This one keeps
+    each hand slot separate for longer: for each slot it sees board + that slot's
+    legal-placement map + an embedding of that slot's shape, then a shared CNN
+    builds slot-specific features. That is closer to how the heuristic thinks:
+    score concrete placements for a concrete piece.
+    """
+    def __init__(self, observation_space: spaces.Dict, features_dim: int = 768):
+        super().__init__(observation_space, features_dim)
+
+        hand_shape = observation_space["hand"].shape
+        hand_flat_size = int(np.prod(hand_shape[1:]))
+
+        coord_y = torch.linspace(-1.0, 1.0, 8).view(1, 1, 8, 1).expand(1, 1, 8, 8)
+        coord_x = torch.linspace(-1.0, 1.0, 8).view(1, 1, 1, 8).expand(1, 1, 8, 8)
+        self.register_buffer("coord_channels", torch.cat([coord_y, coord_x], dim=1), persistent=False)
+
+        self.slot_hand_encoder = nn.Sequential(
+            nn.Linear(hand_flat_size, 64),
+            nn.ReLU(),
+            nn.Linear(64, 24),
+            nn.ReLU(),
+        )
+
+        slot_channels = 1 + 1 + 1 + 2 + 24
+        self.slot_cnn = nn.Sequential(
+            nn.Conv2d(slot_channels, 64, kernel_size=3, stride=1, padding=1),
+            nn.GroupNorm(8, 64),
+            nn.ReLU(),
+            ResidualConvBlock(64),
+            nn.Conv2d(64, 96, kernel_size=3, stride=1, padding=1),
+            nn.GroupNorm(8, 96),
+            nn.ReLU(),
+            ResidualConvBlock(96),
+            nn.Conv2d(96, 128, kernel_size=3, stride=1, padding=1),
+            nn.GroupNorm(8, 128),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d((4, 4)),
+            nn.Flatten(),
+            nn.Linear(128 * 4 * 4, 256),
+            nn.ReLU(),
+        )
+
+        self.global_cnn = nn.Sequential(
+            nn.Conv2d(4, 64, kernel_size=3, stride=1, padding=1),
+            nn.GroupNorm(8, 64),
+            nn.ReLU(),
+            ResidualConvBlock(64),
+            nn.Conv2d(64, 96, kernel_size=3, stride=1, padding=1),
+            nn.GroupNorm(8, 96),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d((4, 4)),
+            nn.Flatten(),
+            nn.Linear(96 * 4 * 4, 192),
+            nn.ReLU(),
+        )
+
+        self.hand_global = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(int(np.prod(hand_shape)), 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+        )
+        self.available_fc = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(3, 32),
+            nn.ReLU(),
+        )
+
+        combined_size = (3 * 256) + 192 + 64 + 32
+        self.fc_combined = nn.Sequential(
+            nn.Linear(combined_size, 768),
+            nn.ReLU(),
+            nn.LayerNorm(768),
+            nn.Linear(768, features_dim),
+            nn.ReLU(),
+        )
+
+    def forward(self, observations):
+        board = observations["board"].float()
+        valid_actions = observations["valid_actions"].float()
+        hand = observations["hand"].float()
+        available = observations["available"].float()
+
+        batch_size = board.shape[0]
+        slot_features = []
+        coords = self.coord_channels.expand(batch_size, -1, -1, -1)
+
+        for slot_idx in range(3):
+            slot_hand = hand[:, slot_idx].reshape(batch_size, -1)
+            slot_embedding = self.slot_hand_encoder(slot_hand).view(batch_size, 24, 1, 1).expand(-1, -1, 8, 8)
+            slot_available = available[:, slot_idx].view(batch_size, 1, 1, 1).expand(-1, 1, 8, 8)
+            slot_valid = valid_actions[:, slot_idx:slot_idx + 1]
+
+            slot_input = torch.cat([board, slot_valid, slot_available, coords, slot_embedding], dim=1)
+            slot_features.append(self.slot_cnn(slot_input))
+
+        all_valid = valid_actions
+        global_input = torch.cat([board, all_valid], dim=1)
+        global_features = self.global_cnn(global_input)
+        hand_features = self.hand_global(hand)
+        available_features = self.available_fc(available)
+
+        combined = torch.cat([*slot_features, global_features, hand_features, available_features], dim=1)
+        return self.fc_combined(combined)
+
+
 class BlockBlastEnv(gym.Env):
     def __init__(
         self,
@@ -125,9 +322,11 @@ class BlockBlastEnv(gym.Env):
             "created_hole_penalty_weight": 1.0,
             "contact_reward_scale": 12.0,
             "contact_reward_power": 1.25,
-            "complexity_simple_prob": 0.62,
-            "complexity_medium_prob": 0.28,
-            "complexity_hard_prob": 0.10,
+            "contact_reward_threshold": 0.0,
+            "contact_penalty_scale": 0.0,
+            "complexity_simple_prob": 0.78,
+            "complexity_medium_prob": 0.18,
+            "complexity_hard_prob": 0.04,
         }
         if reward_config:
             self.reward_config.update(reward_config)
@@ -137,9 +336,9 @@ class BlockBlastEnv(gym.Env):
         if not reward_config:
             return None
         return {
-            "simple": reward_config.get("complexity_simple_prob", 0.62),
-            "medium": reward_config.get("complexity_medium_prob", 0.28),
-            "hard": reward_config.get("complexity_hard_prob", 0.10),
+            "simple": reward_config.get("complexity_simple_prob", 0.78),
+            "medium": reward_config.get("complexity_medium_prob", 0.18),
+            "hard": reward_config.get("complexity_hard_prob", 0.04),
         }
 
     def _new_game_rng(self):
@@ -285,6 +484,24 @@ class BlockBlastEnv(gym.Env):
             "contact_ratio": ratio,
         }
 
+    def _calculate_contact_reward(self, contact_ratio):
+        cfg = self.reward_config
+        threshold = max(0.0, min(float(cfg["contact_reward_threshold"]), 0.99))
+        power = cfg["contact_reward_power"]
+
+        if threshold <= 0.0:
+            reward = (contact_ratio ** power) * cfg["contact_reward_scale"]
+            return reward, contact_ratio
+
+        if contact_ratio < threshold:
+            miss_ratio = (threshold - contact_ratio) / max(threshold, 1e-6)
+            reward = -((miss_ratio ** power) * cfg["contact_penalty_scale"])
+            return reward, -miss_ratio
+
+        surplus_ratio = (contact_ratio - threshold) / max(1.0 - threshold, 1e-6)
+        reward = (surplus_ratio ** power) * cfg["contact_reward_scale"]
+        return reward, surplus_ratio
+
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.game = BlockBlastLogic(
@@ -324,13 +541,12 @@ class BlockBlastEnv(gym.Env):
             "external_edges": 0,
             "contact_ratio": 0.0,
         }
+        contact_score = 0.0
         
         if is_valid:
             if placed_block is not None:
                 contact_stats = self._calculate_contact_stats(previous_grid, placed_block, row, col)
-            reward_contact = (
-                contact_stats["contact_ratio"] ** cfg["contact_reward_power"]
-            ) * cfg["contact_reward_scale"]
+            reward_contact, contact_score = self._calculate_contact_reward(contact_stats["contact_ratio"])
             reward += reward_contact
 
             if lines_cleared > 0:
@@ -366,6 +582,8 @@ class BlockBlastEnv(gym.Env):
             "reward/holes": reward_holes * cfg["reward_scale"],
             "reward/game_over": reward_game_over * cfg["reward_scale"],
             "placement/contact_ratio": contact_stats["contact_ratio"],
+            "placement/contact_score": contact_score,
+            "placement/contact_threshold": cfg["contact_reward_threshold"],
             "placement/touching_edges": contact_stats["touching_edges"],
             "holes/current_cells": hole_stats["current_hole_cells"],
             "holes/created_cells": hole_stats["created_hole_cells"],

@@ -6,7 +6,7 @@ import gymnasium as gym
 import numpy as np
 import torch
 from blocks import TRAINING_POOLS
-from env import BlockBlastEnv, CustomCNNExtractor
+from env import BlockBlastEnv, ActionAwareCNNExtractor, CustomCNNExtractor, CustomCNNExtractorV2
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.wrappers import ActionMasker
 from stable_baselines3.common.callbacks import BaseCallback, CallbackList, CheckpointCallback
@@ -40,6 +40,8 @@ class TensorboardStatsCallback(BaseCallback):
             "reward/holes",
             "reward/game_over",
             "placement/contact_ratio",
+            "placement/contact_score",
+            "placement/contact_threshold",
             "holes/current_cells",
             "holes/created_cells",
             "game/valid_actions",
@@ -194,13 +196,15 @@ def parse_args():
     parser.add_argument("--reward-game-over-early-weight", type=float, default=3.0)
     parser.add_argument("--reward-contact-scale", type=float, default=12.0)
     parser.add_argument("--reward-contact-power", type=float, default=1.25)
+    parser.add_argument("--reward-contact-threshold", type=float, default=0.0)
+    parser.add_argument("--reward-contact-penalty-scale", type=float, default=0.0)
     parser.add_argument("--reward-scale", type=float, default=1.0)
     parser.add_argument("--apply-hole-penalty", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--hole-penalty-weight", type=float, default=0.25)
     parser.add_argument("--created-hole-penalty-weight", type=float, default=1.0)
-    parser.add_argument("--complexity-simple-prob", type=float, default=0.62)
-    parser.add_argument("--complexity-medium-prob", type=float, default=0.28)
-    parser.add_argument("--complexity-hard-prob", type=float, default=0.10)
+    parser.add_argument("--complexity-simple-prob", type=float, default=0.78)
+    parser.add_argument("--complexity-medium-prob", type=float, default=0.18)
+    parser.add_argument("--complexity-hard-prob", type=float, default=0.04)
     parser.add_argument("--eval-freq", type=int, default=500_000)
     parser.add_argument("--eval-episodes", type=int, default=100)
     parser.add_argument("--max-eval-steps", type=int, default=5000)
@@ -210,6 +214,9 @@ def parse_args():
     parser.add_argument("--init-from-model", default=None, help="Initialize policy weights from this model path, but keep current hyperparameters.")
     parser.add_argument("--shape-pool", choices=sorted(TRAINING_POOLS.keys()), default="all")
     parser.add_argument("--hand-generator", choices=["solvable", "playable", "adaptive_playable", "random"], default="solvable")
+    parser.add_argument("--cnn-arch", choices=["base", "v2", "actionaware"], default="base")
+    parser.add_argument("--features-dim", type=int, default=256)
+    parser.add_argument("--net-arch", default="256,256", help="Comma-separated hidden sizes for policy/value heads.")
 
     parser.add_argument("--torch-threads", type=int, default=0)
     return parser.parse_args()
@@ -278,6 +285,8 @@ def build_reward_config(args):
         "game_over_early_weight": args.reward_game_over_early_weight,
         "contact_reward_scale": args.reward_contact_scale,
         "contact_reward_power": args.reward_contact_power,
+        "contact_reward_threshold": args.reward_contact_threshold,
+        "contact_penalty_scale": args.reward_contact_penalty_scale,
         "reward_scale": args.reward_scale,
         "apply_hole_penalty": args.apply_hole_penalty,
         "hole_penalty_weight": args.hole_penalty_weight,
@@ -288,6 +297,21 @@ def build_reward_config(args):
         "shape_pool": args.shape_pool,
         "hand_generator": args.hand_generator,
     }
+
+
+def build_policy_kwargs(args):
+    extractor_class = {
+        "base": CustomCNNExtractor,
+        "v2": CustomCNNExtractorV2,
+        "actionaware": ActionAwareCNNExtractor,
+    }[args.cnn_arch]
+    net_arch = [int(value.strip()) for value in args.net_arch.split(",") if value.strip()]
+    return dict(
+        features_extractor_class=extractor_class,
+        features_extractor_kwargs=dict(features_dim=args.features_dim),
+        net_arch=dict(pi=net_arch, vf=net_arch),
+        activation_fn=torch.nn.ReLU,
+    )
 
 
 def build_learning_rate(args):
@@ -314,10 +338,7 @@ def build_model(env, device: str, args):
     should_resume = args.resume and model_exists
     init_from_model = normalize_model_path(args.init_from_model) if args.init_from_model else None
 
-    policy_kwargs = dict(
-        features_extractor_class=CustomCNNExtractor,
-        features_extractor_kwargs=dict(features_dim=256),
-    )
+    policy_kwargs = build_policy_kwargs(args)
 
     if should_resume:
         print("✅ GĂSIT! Continuăm antrenamentul modelului existent...")
@@ -434,8 +455,19 @@ def run_benchmark(args, reward_config):
             n_epochs=candidate["n_epochs"],
             device=candidate["device"],
             policy_kwargs=dict(
-                features_extractor_class=CustomCNNExtractor,
-                features_extractor_kwargs=dict(features_dim=256),
+                features_extractor_class=(
+                    CustomCNNExtractor
+                    if args.cnn_arch == "base"
+                    else CustomCNNExtractorV2
+                    if args.cnn_arch == "v2"
+                    else ActionAwareCNNExtractor
+                ),
+                features_extractor_kwargs=dict(features_dim=args.features_dim),
+                net_arch=dict(
+                    pi=[int(value.strip()) for value in args.net_arch.split(",") if value.strip()],
+                    vf=[int(value.strip()) for value in args.net_arch.split(",") if value.strip()],
+                ),
+                activation_fn=torch.nn.ReLU,
             ),
         )
 
@@ -495,6 +527,16 @@ def main():
     print(f"🕳️ Hole penalty: {'ENABLED' if args.apply_hole_penalty else 'DISABLED'}")
     print(f"🧩 Shape pool: {args.shape_pool} ({len(TRAINING_POOLS[args.shape_pool])} piese)")
     print(f"🎲 Hand generator: {args.hand_generator}")
+    print(f"🧠 CNN arch: {args.cnn_arch}, features_dim={args.features_dim}")
+    print(
+        f"🤝 Contact reward: threshold={args.reward_contact_threshold}, "
+        f"plus_scale={args.reward_contact_scale}, minus_scale={args.reward_contact_penalty_scale}, "
+        f"power={args.reward_contact_power}"
+    )
+    print(
+        f"🔁 PPO rollout: n_steps={args.n_steps}, envs={args.num_cpu}, "
+        f"batch={args.batch_size}, epochs={args.n_epochs}, gamma={args.gamma}, lr={args.learning_rate}"
+    )
     if args.resolved_fixed_game_seeds:
         preview = ", ".join(str(seed) for seed in args.resolved_fixed_game_seeds[:12])
         suffix = "" if len(args.resolved_fixed_game_seeds) <= 12 else ", ..."
