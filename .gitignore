@@ -15,9 +15,11 @@ venv/
 
 # Local dev artifacts
 tensorboard_logs/
-checkpoints/cnn_holes/
-checkpoints/cnn_single_match/
-checkpoints/cnn_curriculum/
-checkpoints/fast/
+tensorboard_sweeps/
+checkpoints/
+datasets/
 run_logs/
+sweep_results/
 .codex
+SUSTINERE_PROIECT.md
+29042026_333AA_Potop_Horia_Ioan.txt

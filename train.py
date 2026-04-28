@@ -2,18 +2,17 @@ import argparse
 import os
 import time
 
-import gymnasium as gym
 import numpy as np
 import torch
 from blocks import TRAINING_POOLS
-from env import BlockBlastEnv, CustomCNNExtractor
+from env import BlockBlastEnv, ActionAwareCNNExtractor, CustomCNNExtractor, CustomCNNExtractorV2
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.wrappers import ActionMasker
 from stable_baselines3.common.callbacks import BaseCallback, CallbackList, CheckpointCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
-def mask_fn(env: gym.Env):
+def mask_fn(env):
     if hasattr(env, "valid_action_mask"):
         return env.valid_action_mask()
 
@@ -28,7 +27,7 @@ class TensorboardStatsCallback(BaseCallback):
         super().__init__(verbose)
         self.enabled = enabled
 
-    def _on_step(self) -> bool:
+    def _on_step(self):
         if not self.enabled:
             return True
 
@@ -36,8 +35,12 @@ class TensorboardStatsCallback(BaseCallback):
         scalar_keys = [
             "reward/line",
             "reward/stage",
+            "reward/contact",
             "reward/holes",
             "reward/game_over",
+            "placement/contact_ratio",
+            "placement/contact_score",
+            "placement/contact_threshold",
             "holes/current_cells",
             "holes/created_cells",
             "game/valid_actions",
@@ -80,7 +83,7 @@ class StageEvalCallback(BaseCallback):
         self.deterministic = deterministic
         self.last_eval_step = 0
 
-    def _on_step(self) -> bool:
+    def _on_step(self):
         if self.eval_freq <= 0:
             return True
         if self.num_timesteps - self.last_eval_step < self.eval_freq:
@@ -168,7 +171,7 @@ def parse_args():
     parser.add_argument("--batch-size", type=int, default=2048)
     parser.add_argument("--n-epochs", type=int, default=8)
     parser.add_argument("--learning-rate", type=float, default=0.0002)
-    parser.add_argument("--gamma", type=float, default=0.99)
+    parser.add_argument("--gamma", type=float, default=0.6)
     parser.add_argument("--ent-coef", type=float, default=0.02)
     parser.add_argument("--lr-schedule", choices=["constant", "linear"], default="linear")
     parser.add_argument("--lr-final-ratio", type=float, default=0.2)
@@ -190,10 +193,17 @@ def parse_args():
     parser.add_argument("--reward-no-line", type=float, default=0.0)
     parser.add_argument("--reward-game-over", type=float, default=200.0)
     parser.add_argument("--reward-game-over-early-weight", type=float, default=3.0)
+    parser.add_argument("--reward-contact-scale", type=float, default=12.0)
+    parser.add_argument("--reward-contact-power", type=float, default=1.25)
+    parser.add_argument("--reward-contact-threshold", type=float, default=0.0)
+    parser.add_argument("--reward-contact-penalty-scale", type=float, default=0.0)
     parser.add_argument("--reward-scale", type=float, default=1.0)
     parser.add_argument("--apply-hole-penalty", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--hole-penalty-weight", type=float, default=0.25)
     parser.add_argument("--created-hole-penalty-weight", type=float, default=1.0)
+    parser.add_argument("--complexity-simple-prob", type=float, default=0.78)
+    parser.add_argument("--complexity-medium-prob", type=float, default=0.18)
+    parser.add_argument("--complexity-hard-prob", type=float, default=0.04)
     parser.add_argument("--eval-freq", type=int, default=500_000)
     parser.add_argument("--eval-episodes", type=int, default=100)
     parser.add_argument("--max-eval-steps", type=int, default=5000)
@@ -201,14 +211,17 @@ def parse_args():
     parser.add_argument("--fixed-game-seeds", default=None, help="Comma-separated seeds, assigned across envs and eval episodes.")
     parser.add_argument("--fixed-game-seed-count", type=int, default=0, help="Use fixed-game-seed as the first seed and generate this many consecutive seeds.")
     parser.add_argument("--init-from-model", default=None, help="Initialize policy weights from this model path, but keep current hyperparameters.")
-    parser.add_argument("--shape-pool", choices=sorted(TRAINING_POOLS.keys()), default="all")
-    parser.add_argument("--hand-generator", choices=["solvable", "playable", "random"], default="solvable")
+    parser.add_argument("--shape-pool", choices=sorted(TRAINING_POOLS.keys()), default="mini")
+    parser.add_argument("--hand-generator", choices=["solvable", "playable", "adaptive_playable", "random"], default="solvable")
+    parser.add_argument("--cnn-arch", choices=["base", "v2", "actionaware"], default="base")
+    parser.add_argument("--features-dim", type=int, default=256)
+    parser.add_argument("--net-arch", default="256,256", help="Comma-separated hidden sizes for policy/value heads.")
 
     parser.add_argument("--torch-threads", type=int, default=0)
     return parser.parse_args()
 
 
-def normalize_model_path(path: str) -> str:
+def normalize_model_path(path):
     if path.endswith(".zip"):
         return path[:-4]
     return path
@@ -224,22 +237,22 @@ def parse_fixed_game_seeds(args):
     return None
 
 
-def resolve_device(choice: str) -> str:
+def resolve_device(choice):
     if choice != "auto":
         return choice
 
     if torch.cuda.is_available():
-        print("🚀 Dispozitiv procesare Neural Network: NVIDIA CUDA")
+        print("Device: NVIDIA CUDA")
         return "cuda"
 
     if torch.backends.mps.is_available():
-        print("⚠️ MPS este disponibil, dar pentru acest proiect CPU tinde să fie mai rapid. Folosește --device mps doar dacă vrei să-l testezi explicit.")
+        print("MPS este disponibil, dar CPU tinde sa fie mai rapid pentru acest proiect. Foloseste --device mps doar pentru test.")
 
-    print("⚠️ Atenție: rulăm pe CPU.")
+    print("Atentie: rulam pe CPU.")
     return "cpu"
 
 
-def build_vec_env(vec_env_kind: str, num_cpu: int, reward_config, start_method: str = "fork", fixed_game_seed=None, fixed_game_seeds=None):
+def build_vec_env(vec_env_kind, num_cpu, reward_config, start_method="fork", fixed_game_seed=None, fixed_game_seeds=None):
     env_fns = []
     for env_index in range(num_cpu):
         env_seed = fixed_game_seed
@@ -251,7 +264,7 @@ def build_vec_env(vec_env_kind: str, num_cpu: int, reward_config, start_method: 
     return SubprocVecEnv(env_fns, start_method=start_method)
 
 
-def configure_torch_threads(thread_count: int):
+def configure_torch_threads(thread_count):
     if thread_count > 0:
         torch.set_num_threads(thread_count)
         try:
@@ -269,13 +282,35 @@ def build_reward_config(args):
         "no_line_penalty": args.reward_no_line,
         "game_over_penalty": args.reward_game_over,
         "game_over_early_weight": args.reward_game_over_early_weight,
+        "contact_reward_scale": args.reward_contact_scale,
+        "contact_reward_power": args.reward_contact_power,
+        "contact_reward_threshold": args.reward_contact_threshold,
+        "contact_penalty_scale": args.reward_contact_penalty_scale,
         "reward_scale": args.reward_scale,
         "apply_hole_penalty": args.apply_hole_penalty,
         "hole_penalty_weight": args.hole_penalty_weight,
         "created_hole_penalty_weight": args.created_hole_penalty_weight,
+        "complexity_simple_prob": args.complexity_simple_prob,
+        "complexity_medium_prob": args.complexity_medium_prob,
+        "complexity_hard_prob": args.complexity_hard_prob,
         "shape_pool": args.shape_pool,
         "hand_generator": args.hand_generator,
     }
+
+
+def build_policy_kwargs(args):
+    extractor_class = {
+        "base": CustomCNNExtractor,
+        "v2": CustomCNNExtractorV2,
+        "actionaware": ActionAwareCNNExtractor,
+    }[args.cnn_arch]
+    net_arch = [int(value.strip()) for value in args.net_arch.split(",") if value.strip()]
+    return dict(
+        features_extractor_class=extractor_class,
+        features_extractor_kwargs=dict(features_dim=args.features_dim),
+        net_arch=dict(pi=net_arch, vf=net_arch),
+        activation_fn=torch.nn.ReLU,
+    )
 
 
 def build_learning_rate(args):
@@ -285,38 +320,35 @@ def build_learning_rate(args):
     initial_lr = args.learning_rate
     final_lr = max(initial_lr * args.lr_final_ratio, 1e-8)
 
-    def linear_decay(progress_remaining: float) -> float:
+    def linear_decay(progress_remaining):
         return final_lr + (initial_lr - final_lr) * progress_remaining
 
     return linear_decay
 
 
-def ensure_parent_dir(path: str):
+def ensure_parent_dir(path):
     directory = os.path.dirname(path)
     if directory:
         os.makedirs(directory, exist_ok=True)
 
 
-def build_model(env, device: str, args):
+def build_model(env, device, args):
     model_exists = os.path.exists(args.model_path + ".zip")
     should_resume = args.resume and model_exists
     init_from_model = normalize_model_path(args.init_from_model) if args.init_from_model else None
 
-    policy_kwargs = dict(
-        features_extractor_class=CustomCNNExtractor,
-        features_extractor_kwargs=dict(features_dim=256),
-    )
+    policy_kwargs = build_policy_kwargs(args)
 
     if should_resume:
-        print("✅ GĂSIT! Continuăm antrenamentul modelului existent...")
+        print("Gasit model existent. Continuam antrenamentul.")
         model = MaskablePPO.load(args.model_path, env=env, tensorboard_log=args.log_dir, device=device)
-        print("ℹ️ Pentru modelul încărcat, hiperparametrii salvați rămân activi. Dacă vrei setări complet noi, folosește --no-resume.")
+        print("Modelul incarcat pastreaza hiperparametrii salvati. Pentru setari noi foloseste --no-resume.")
         return model, True
 
     if init_from_model:
-        print("🧠 Inițializăm model nou cu hiperparametrii curenți și greutăți preluate din modelul indicat...")
+        print("Initializam model nou cu hiperparametrii curenti si greutati preluate din modelul indicat.")
     else:
-        print("🧠 Inițializăm un model nou de la zero...")
+        print("Initializam un model nou de la zero.")
 
     model = MaskablePPO(
         "MultiInputPolicy",
@@ -335,10 +367,10 @@ def build_model(env, device: str, args):
 
     if init_from_model:
         if not os.path.exists(init_from_model + ".zip"):
-            raise FileNotFoundError(f"Nu există modelul pentru init-from-model: {init_from_model}.zip")
+            raise FileNotFoundError(f"Nu exista modelul pentru init-from-model: {init_from_model}.zip")
         source_model = MaskablePPO.load(init_from_model, device=device)
         model.policy.load_state_dict(source_model.policy.state_dict())
-        print(f"✅ Greutăți încărcate din: {init_from_model}.zip")
+        print(f"Greutati incarcate din: {init_from_model}.zip")
 
     return model, False
 
@@ -399,7 +431,7 @@ def run_benchmark(args, reward_config):
         )
 
     results = []
-    print("🏁 Pornim benchmark-ul scurt pentru FPS...")
+    print("Pornim benchmark-ul scurt pentru FPS.")
 
     for index, candidate in enumerate(candidate_configs, start=1):
         print(
@@ -414,17 +446,14 @@ def run_benchmark(args, reward_config):
             "MultiInputPolicy",
             env,
             verbose=0,
-            learning_rate=args.learning_rate,
+            learning_rate=build_learning_rate(args),
             gamma=args.gamma,
             ent_coef=args.ent_coef,
             n_steps=candidate["n_steps"],
             batch_size=candidate["batch_size"],
             n_epochs=candidate["n_epochs"],
             device=candidate["device"],
-            policy_kwargs=dict(
-                features_extractor_class=CustomCNNExtractor,
-                features_extractor_kwargs=dict(features_dim=256),
-            ),
+            policy_kwargs=build_policy_kwargs(args),
         )
 
         start_time = time.perf_counter()
@@ -445,7 +474,7 @@ def run_benchmark(args, reward_config):
     results.sort(key=lambda item: item[0], reverse=True)
     best_fps, best_candidate = results[0]
 
-    print("\n📊 Rezultate benchmark:")
+    print("\nRezultate benchmark:")
     for fps, candidate in results:
         print(
             f"  fps={fps:.1f} | device={candidate['device']} vec_env={candidate['vec_env']} "
@@ -454,7 +483,7 @@ def run_benchmark(args, reward_config):
         )
 
     print(
-        f"\n✅ Cea mai rapidă variantă: device={best_candidate['device']} vec_env={best_candidate['vec_env']} "
+        f"\nCea mai rapida varianta: device={best_candidate['device']} vec_env={best_candidate['vec_env']} "
         f"num_cpu={best_candidate['num_cpu']} n_steps={best_candidate['n_steps']} "
         f"batch_size={best_candidate['batch_size']} n_epochs={best_candidate['n_epochs']} "
         f"cu ~{best_fps:.1f} FPS"
@@ -476,17 +505,27 @@ def main():
         return
 
     device = resolve_device(args.device)
-    print(f"🚀 Antrenament pe: {device.upper()}")
-    print(f"⚡ Se pornesc {args.num_cpu} instanțe de joc în paralel...")
-    print(f"📦 Model path: {args.model_path}.zip")
-    print(f"🧱 Checkpoint dir: {args.checkpoint_dir}")
-    print(f"🕳️ Hole penalty: {'ENABLED' if args.apply_hole_penalty else 'DISABLED'}")
-    print(f"🧩 Shape pool: {args.shape_pool} ({len(TRAINING_POOLS[args.shape_pool])} piese)")
-    print(f"🎲 Hand generator: {args.hand_generator}")
+    print(f"Antrenament pe: {device.upper()}")
+    print(f"Se pornesc {args.num_cpu} instante de joc in paralel.")
+    print(f"Model path: {args.model_path}.zip")
+    print(f"Checkpoint dir: {args.checkpoint_dir}")
+    print(f"Hole penalty: {'ENABLED' if args.apply_hole_penalty else 'DISABLED'}")
+    print(f"Shape pool: {args.shape_pool} ({len(TRAINING_POOLS[args.shape_pool])} piese)")
+    print(f"Hand generator: {args.hand_generator}")
+    print(f"CNN arch: {args.cnn_arch}, features_dim={args.features_dim}")
+    print(
+        f"Contact reward: threshold={args.reward_contact_threshold}, "
+        f"plus_scale={args.reward_contact_scale}, minus_scale={args.reward_contact_penalty_scale}, "
+        f"power={args.reward_contact_power}"
+    )
+    print(
+        f"PPO rollout: n_steps={args.n_steps}, envs={args.num_cpu}, "
+        f"batch={args.batch_size}, epochs={args.n_epochs}, gamma={args.gamma}, lr={args.learning_rate}"
+    )
     if args.resolved_fixed_game_seeds:
         preview = ", ".join(str(seed) for seed in args.resolved_fixed_game_seeds[:12])
         suffix = "" if len(args.resolved_fixed_game_seeds) <= 12 else ", ..."
-        print(f"🎯 Fixed game seeds: {preview}{suffix} ({len(args.resolved_fixed_game_seeds)} seed-uri)")
+        print(f"Fixed game seeds: {preview}{suffix} ({len(args.resolved_fixed_game_seeds)} seed-uri)")
 
     env = build_vec_env(
         args.vec_env,
@@ -498,7 +537,7 @@ def main():
     )
     model, resumed = build_model(env, device, args)
 
-    print("🏁 Începem antrenamentul...")
+    print("Incepem antrenamentul.")
     callback = build_training_callbacks(args, reward_config)
     interrupted = False
 
@@ -510,14 +549,14 @@ def main():
             callback=callback,
         )
 
-        print("Antrenament complet! Salvăm modelul final...")
+        print("Antrenament complet! Salvam modelul final...")
     except KeyboardInterrupt:
         interrupted = True
-        print("\n⏹️ Antrenament oprit manual. Salvăm progresul curent...")
+        print("\nAntrenament oprit manual. Salvam progresul curent.")
     finally:
         ensure_parent_dir(args.model_path)
         model.save(args.model_path)
-        print(f"💾 Model salvat în: {args.model_path}.zip")
+        print(f"Model salvat in: {args.model_path}.zip")
 
         try:
             env.close()
@@ -525,7 +564,7 @@ def main():
             pass
 
     if interrupted:
-        print("ℹ️ Poți relua ulterior cu --resume dacă vrei să continui din acest punct.")
+        print("Poti relua ulterior cu --resume daca vrei sa continui din acest punct.")
 
 if __name__ == "__main__":
     main()

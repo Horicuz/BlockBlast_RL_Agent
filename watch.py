@@ -1,65 +1,182 @@
 import argparse
 import os
+import sys
 import time
+import traceback
 
 import numpy as np
-import pygame
-from blocks import SHAPES
+from PySide6.QtCore import QPoint, QRect, QTimer, Qt
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QPainter, QPen
+from PySide6.QtWidgets import QApplication, QComboBox, QWidget
+
+from blocks import SHAPE_LIBRARY, TRAINING_POOLS
 from env import BlockBlastEnv
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.wrappers import ActionMasker
 
-GRID_SIZE = 8
+DEFAULT_BOARD_SIZE = 8
+GRID_SIZE = DEFAULT_BOARD_SIZE
 HAND_SIZE = 3
-AUTO_MOVE_INTERVAL = 0.7
+BOARD_CELLS = GRID_SIZE * GRID_SIZE
 
-WINDOW_WIDTH = 1280
-WINDOW_HEIGHT = 860
+WINDOW_WIDTH = 1680
+WINDOW_HEIGHT = 930
 
-BOARD_X = 64
-BOARD_Y = 110
-CELL_SIZE = 56
-CELL_GAP = 4
-BOARD_SIZE = GRID_SIZE * CELL_SIZE
+FPS = 60
+AI_STEP_INTERVAL = 0.35
 
-PANEL_X = BOARD_X + BOARD_SIZE + 44
-PANEL_W = WINDOW_WIDTH - PANEL_X - 64
+SINGLE_CELL = 60
+SINGLE_BOARD_X = 88
+SINGLE_BOARD_Y = 130
+SINGLE_BOARD_SIZE = GRID_SIZE * SINGLE_CELL
 
-HAND_Y = 700
-HAND_SLOT_W = 112
-HAND_SLOT_H = 112
+DUAL_CELL = 52
+DUAL_BOARD_X_LEFT = 86
+DUAL_BOARD_X_RIGHT = 748
+DUAL_BOARD_Y = 126
+DUAL_BOARD_SIZE = GRID_SIZE * DUAL_CELL
+
+HAND_SLOT_W = 130
+HAND_SLOT_H = 130
 HAND_SLOT_GAP = 20
 
-BG = (11, 18, 33)
-BG_2 = (16, 26, 47)
-PANEL = (19, 28, 48)
-PANEL_2 = (26, 38, 63)
-BOARD_BG = (23, 32, 54)
-BOARD_CELL = (40, 51, 79)
-BOARD_CELL_HOT = (55, 68, 104)
-BLOCK = (89, 198, 255)
-BLOCK_SHADOW = (34, 128, 193)
-HUMAN = (255, 184, 77)
-AI = (113, 214, 161)
-ROUNDSAFE = (175, 121, 255)
-WARN = (255, 201, 92)
-LAST_MOVE = WARN
-LAST_MOVE_SHADOW = (176, 132, 34)
-TEXT = (233, 240, 255)
-MUTED = (160, 174, 198)
-DIM = (84, 96, 120)
-GOOD = (70, 226, 152)
-BAD = (255, 110, 122)
-WHITE = (255, 255, 255)
+MINI_CELL = 22
+HAND_BLOCK_OFFSET_X = 24
+HAND_BLOCK_OFFSET_Y = 24
 
-SHAPE_KEYS = list(SHAPES.keys())
+MENU_BTN_W = 440
+MENU_BTN_H = 78
+MENU_BTN_GAP = 18
+
+BG = (11, 18, 34)
+PANEL = (22, 34, 62)
+PANEL_2 = (30, 45, 79)
+BOARD_BG = (18, 29, 52)
+CELL_BG = (40, 54, 85)
+CELL_FILL = (98, 205, 255)
+CELL_SHADOW = (42, 130, 188)
+TEXT = (236, 243, 255)
+MUTED = (162, 178, 204)
+DIM = (97, 110, 142)
+WHITE = (255, 255, 255)
+HUMAN = (255, 187, 85)
+AI = (112, 218, 164)
+WARN = (255, 203, 100)
+BAD = (255, 111, 133)
+GOOD = (88, 231, 157)
+GHOST_VALID = (106, 220, 149)
+GHOST_INVALID = (233, 104, 126)
+
+WATCH_DEFAULTS = {
+    4: {
+        "model_path": "checkpoints/4x4_best8x8/4x4_best8x8_basecnn_g03_lr2e3/block_blast_4x4_best8x8_basecnn_v1.zip",
+        "shape_pool": "mini",
+        "hand_generator": "adaptive_playable",
+    },
+    8: {
+        "model_path": "checkpoints/cnn_contact_threshold/basecnn_contact_threshold_gamma06_lr8e4_lines28/block_blast_basecnn_contact_threshold_gamma06_v1.zip",
+        "shape_pool": "all",
+        "hand_generator": "adaptive_playable",
+    },
+}
+
+
+def configure_board_mode(board_size):
+    global GRID_SIZE, BOARD_CELLS, SINGLE_BOARD_SIZE, DUAL_BOARD_SIZE
+    GRID_SIZE = int(board_size)
+    BOARD_CELLS = GRID_SIZE * GRID_SIZE
+    SINGLE_BOARD_SIZE = GRID_SIZE * SINGLE_CELL
+    DUAL_BOARD_SIZE = GRID_SIZE * DUAL_CELL
+
+
+def resolve_watch_defaults(args):
+    defaults = WATCH_DEFAULTS.get(int(args.board_size), WATCH_DEFAULTS[DEFAULT_BOARD_SIZE])
+    if getattr(args, "model_path", None) is None:
+        args.model_path = defaults["model_path"]
+    if getattr(args, "shape_pool", None) is None:
+        args.shape_pool = defaults["shape_pool"]
+    if getattr(args, "hand_generator", None) is None:
+        args.hand_generator = defaults["hand_generator"]
+    return args
+
+SHAPE_KEYS = list(SHAPE_LIBRARY.keys())
+
+WATCH_REWARD_CONFIG = {
+    "placement_reward": 0.0,
+    "line_clear_scale": 28.0,
+    "line_clear_bonus": 1.5,
+    "stage_complete_reward": 0.0,
+    "no_line_penalty": 0.0,
+    "game_over_penalty": 90.0,
+    "game_over_early_weight": 0.0,
+    "contact_reward_scale": 24.0,
+    "contact_reward_power": 1.15,
+    "contact_reward_threshold": 0.40,
+    "contact_penalty_scale": 8.0,
+    "complexity_simple_prob": 0.78,
+    "complexity_medium_prob": 0.18,
+    "complexity_hard_prob": 0.04,
+}
+
+MODEL_METRICS = {
+    "checkpoints/4x4_best8x8/4x4_best8x8_basecnn_g03_lr2e3/block_blast_4x4_best8x8_basecnn_v1.zip": ("2.5", "11"),
+    "checkpoints/cnn_contact_threshold/basecnn_contact_threshold_gamma06_lr8e4_lines28/block_blast_basecnn_contact_threshold_gamma06_v1.zip": ("20.2", "51"),
+    "checkpoints/cnn_contact_threshold/short_g03_lr2e3/block_blast_basecnn_contact_threshold_short_v1.zip": ("19.9", "60"),
+    "checkpoints/cnn_contact_threshold/short_g05_lr2e2/block_blast_basecnn_contact_threshold_short_v1.zip": ("13.8", "n/a"),
+    "checkpoints/cnn_holes/block_blast_cnn_holes_v1.zip": ("n/a", "n/a"),
+    "checkpoints/cnn_immediate_contact/final_softgen_gamma04_lr2e4_lines42_contact18/block_blast_cnn_immediate_contact_gamma04_lines_v1.zip": ("n/a", "n/a"),
+}
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Play and compare Block Blast runs against the AI")
-    parser.add_argument("--model-path", default="checkpoints/cnn_holes/block_blast_cnn_holes_v1_5000000_steps", help="Model path with or without .zip")
-    parser.add_argument("--auto-interval", type=float, default=AUTO_MOVE_INTERVAL)
+    parser = argparse.ArgumentParser(description="Block Blast visual arena (PySide6)")
+    parser.add_argument("--board-size", type=int, choices=[4, 8], default=DEFAULT_BOARD_SIZE, help="Select the board size to run")
+    parser.add_argument(
+        "--model-path",
+        default=None,
+        help="Model path with or without .zip. If omitted, a default for the selected board size is used.",
+    )
+    parser.add_argument("--no-model", action="store_true", help="Start without loading a PPO model; heuristic mode still works")
+    parser.add_argument("--ai-interval", type=float, default=AI_STEP_INTERVAL)
+    parser.add_argument("--shape-pool", choices=sorted(TRAINING_POOLS.keys()), default=None)
+    parser.add_argument("--hand-generator", choices=["random", "playable", "adaptive_playable", "solvable"], default=None)
+    parser.add_argument("--fixed-game-seed", type=int, default=None)
     return parser.parse_args()
+
+
+def model_display_name(path):
+    parts = path.split(os.sep)
+    if len(parts) >= 3 and parts[-2] != "checkpoints":
+        return parts[-2]
+    return os.path.splitext(os.path.basename(path))[0]
+
+
+def infer_model_config(path):
+    normalized = path.replace("\\", "/")
+    board_size = 4 if ("4x4" in normalized or "/bc/" in normalized) else 8
+    shape_pool = "mini" if board_size == 4 else "all"
+    return {
+        "path": path,
+        "board_size": board_size,
+        "shape_pool": shape_pool,
+        "hand_generator": "adaptive_playable",
+    }
+
+
+def discover_models():
+    models = []
+    for root, _dirs, files in os.walk("checkpoints"):
+        for file_name in files:
+            if file_name.endswith(".zip"):
+                path = os.path.join(root, file_name)
+                config = infer_model_config(path)
+                mean_stage, max_stage = MODEL_METRICS.get(path.replace("\\", "/"), ("n/a", "n/a"))
+                config["mean_stage"] = mean_stage
+                config["max_stage"] = max_stage
+                config["name"] = model_display_name(path)
+                models.append(config)
+    models.sort(key=lambda item: (item["board_size"], item["name"], item["path"]))
+    return models
 
 
 def mask_fn(env):
@@ -73,9 +190,22 @@ def mask_fn(env):
     raise AttributeError("valid_action_mask() is not available on the current environment")
 
 
+def decode_action(action):
+    actions_per_hand = GRID_SIZE * GRID_SIZE
+    hand_idx = action // actions_per_hand
+    remainder = action % actions_per_hand
+    row = remainder // GRID_SIZE
+    col = remainder % GRID_SIZE
+    return hand_idx, row, col
+
+
+def action_from_selection(hand_index, row, col):
+    return (hand_index * (GRID_SIZE * GRID_SIZE)) + (row * GRID_SIZE) + col
+
+
 def shape_key_from_matrix(matrix):
     for key in SHAPE_KEYS:
-        shape = SHAPES[key]
+        shape = SHAPE_LIBRARY[key]
         if shape.shape == matrix.shape and np.array_equal(shape, matrix):
             return key
     return SHAPE_KEYS[0]
@@ -104,668 +234,1246 @@ def restore_game_state(game, game_state):
         game.rng.setstate(game_state["rng_state"])
 
 
-def capture_snapshot(raw_env, runtime_state):
-    return {
-        "game_state": capture_game_state(raw_env.game),
-        "done": runtime_state["done"],
-        "mode": runtime_state["mode"],
-        "last_action_text": runtime_state["last_action_text"],
-        "last_placed_cells": list(runtime_state["last_placed_cells"]),
-    }
-
-
-def apply_snapshot(raw_env, runtime_state, snapshot):
-    restore_game_state(raw_env.game, snapshot["game_state"])
-    runtime_state["obs"] = raw_env._get_obs()
-    runtime_state["done"] = snapshot["done"]
-    runtime_state["mode"] = snapshot.get("mode", runtime_state["mode"])
-    runtime_state["last_action_text"] = snapshot["last_action_text"]
-    runtime_state["last_placed_cells"] = list(snapshot["last_placed_cells"])
-    runtime_state["anim_frames"] = 0
-    runtime_state["anim_rows"] = []
-    runtime_state["anim_cols"] = []
-    runtime_state["step_requested"] = False
-    runtime_state["auto_enabled"] = False
-
-
-def push_history(raw_env, runtime_state):
-    history = runtime_state["history"]
-    history_index = runtime_state["history_index"]
-
-    if history_index < len(history) - 1:
-        runtime_state["history"] = history[:history_index + 1]
-
-    runtime_state["history"].append(capture_snapshot(raw_env, runtime_state))
-    runtime_state["history_index"] += 1
-
-
-def decode_action(action):
-    hand_idx = action // 64
-    remainder = action % 64
-    row = remainder // 8
-    col = remainder % 8
-    return hand_idx, row, col
-
-
-def action_from_selection(hand_index, row, col):
-    return (hand_index * 64) + (row * 8) + col
-
-
-def compute_placed_cells(block_matrix, row, col):
-    cells = []
-    for block_row in range(block_matrix.shape[0]):
-        for block_col in range(block_matrix.shape[1]):
-            if block_matrix[block_row, block_col] == 1:
-                cells.append((row + block_row, col + block_col))
-    return cells
-
-
-def ensure_dir(path):
-    directory = os.path.dirname(path)
-    if directory:
-        os.makedirs(directory, exist_ok=True)
-
-
-def draw_rounded_rect(screen, color, rect, radius=16, border_color=None, border_width=0):
-    pygame.draw.rect(screen, color, rect, border_radius=radius)
-    if border_color is not None and border_width > 0:
-        pygame.draw.rect(screen, border_color, rect, width=border_width, border_radius=radius)
-
-
-def draw_gradient_background(screen):
-    screen.fill(BG)
-    overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-    pygame.draw.circle(overlay, (55, 98, 180, 80), (140, 110), 260)
-    pygame.draw.circle(overlay, (168, 119, 255, 70), (1110, 150), 220)
-    pygame.draw.circle(overlay, (80, 232, 172, 40), (1000, 760), 220)
-    pygame.draw.rect(overlay, (255, 255, 255, 12), (0, 0, WINDOW_WIDTH, 80))
-    screen.blit(overlay, (0, 0))
-
-
-def draw_text(screen, font, text, color, pos):
-    surface = font.render(text, True, color)
-    screen.blit(surface, pos)
-    return surface.get_rect(topleft=pos)
-
-
-def draw_chip(screen, font, label, value, pos, accent):
-    rect = pygame.Rect(pos[0], pos[1], 180, 64)
-    draw_rounded_rect(screen, PANEL_2, rect, radius=18, border_color=accent, border_width=1)
-    draw_text(screen, font, label, MUTED, (rect.x + 14, rect.y + 10))
-    draw_text(screen, font, str(value), TEXT, (rect.x + 14, rect.y + 32))
-
-
-def draw_button(screen, font, rect, label, active=False, accent=BLOCK):
-    bg = accent if active else PANEL_2
-    border = WHITE if active else (70, 86, 116)
-    draw_rounded_rect(screen, bg, rect, radius=16, border_color=border, border_width=1)
-    text_surface = font.render(label, True, WHITE)
-    screen.blit(text_surface, text_surface.get_rect(center=rect.center))
-
-
-def build_buttons():
-    buttons = {}
-    x = PANEL_X
-    y = 370
-    w = 172
-    h = 42
-    gap = 12
-
-    labels = [
-        ("human", "Human Mode"),
-        ("ai_replay", "AI Replay"),
-        ("auto", "Auto AI"),
-        ("step", "Step AI"),
-        ("new", "New Round"),
-        ("undo", "Undo"),
-        ("redo", "Redo"),
-        ("edit", "Edit Setup"),
-        ("apply", "Apply Setup"),
-        ("same_seed", "Reset Same Seed"),
-    ]
-
-    for index, (key, label) in enumerate(labels):
-        row = index // 2
-        col = index % 2
-        rect = pygame.Rect(x + col * (w + gap), y + row * (h + gap), w, h)
-        buttons[key] = (rect, label)
-
-    return buttons
-
-
-def get_hand_slot_rects():
-    rects = []
-    start_x = BOARD_X + 8
-    for i in range(HAND_SIZE):
-        x = start_x + i * (HAND_SLOT_W + HAND_SLOT_GAP)
-        rects.append(pygame.Rect(x, HAND_Y, HAND_SLOT_W, HAND_SLOT_H))
-    return rects
-
-
-def draw_mini_block(screen, block_matrix, start_x, start_y, color, shadow, available=True):
-    mini = 22
-    rows, cols = block_matrix.shape
-    for r in range(rows):
-        for c in range(cols):
-            if block_matrix[r, c] == 1:
-                rect = pygame.Rect(start_x + c * mini, start_y + r * mini, mini - 2, mini - 2)
-                draw_color = color if available else DIM
-                draw_shadow = shadow if available else (52, 58, 76)
-                pygame.draw.rect(screen, draw_color, rect, border_radius=6)
-                shadow_rect = pygame.Rect(rect.x, rect.y + mini - 6, rect.w, 4)
-                pygame.draw.rect(screen, draw_shadow, shadow_rect, border_radius=6)
-
-
-def draw_board(screen, board_font, raw_env, runtime_state, selected_slot, hand_slot_rects, edit_mode, edit_grid, edit_hand_keys):
-    board_rect = pygame.Rect(BOARD_X - 18, BOARD_Y - 18, BOARD_SIZE + 36, BOARD_SIZE + 36)
-    draw_rounded_rect(screen, PANEL, board_rect, radius=28, border_color=(68, 84, 120), border_width=1)
-
-    inner_rect = pygame.Rect(BOARD_X - 6, BOARD_Y - 6, BOARD_SIZE + 12, BOARD_SIZE + 12)
-    draw_rounded_rect(screen, BOARD_BG, inner_rect, radius=22)
-
-    grid = edit_grid if edit_mode else raw_env.game.grid
-
-    selected_block = None
-    if edit_mode:
-        selected_block = SHAPES[edit_hand_keys[selected_slot]]
-    elif runtime_state["mode"] == "human" and not runtime_state["done"] and raw_env.game.available[selected_slot]:
-        selected_block = raw_env.game.hand[selected_slot]
-
-    legal_cells = set()
-    if selected_block is not None and not edit_mode and runtime_state["mode"] == "human":
-        for row in range(GRID_SIZE):
-            for col in range(GRID_SIZE):
-                if raw_env.game.can_place(selected_block, row, col):
-                    legal_cells.add((row, col))
-
-    hover_row, hover_col = runtime_state["hover_cell"] if runtime_state["hover_cell"] is not None else (None, None)
-
-    for row in range(GRID_SIZE):
-        for col in range(GRID_SIZE):
-            cell_rect = pygame.Rect(
-                BOARD_X + col * CELL_SIZE,
-                BOARD_Y + row * CELL_SIZE,
-                CELL_SIZE - CELL_GAP,
-                CELL_SIZE - CELL_GAP,
-            )
-
-            occupied = grid[row, col] == 1
-            animating = (not edit_mode) and runtime_state["anim_frames"] > 0 and (row in runtime_state["anim_rows"] or col in runtime_state["anim_cols"])
-            last_move = (row, col) in runtime_state["last_placed_cells"] and not edit_mode
-            legal = (row, col) in legal_cells
-            hovered = (row == hover_row and col == hover_col)
-
-            cell_color = BOARD_CELL_HOT if hovered or legal else BOARD_CELL
-            if occupied or last_move:
-                cell_color = LAST_MOVE if last_move else BLOCK
-            if animating:
-                cell_color = WHITE
-
-            pygame.draw.rect(screen, cell_color, cell_rect, border_radius=10)
-
-            if occupied or last_move:
-                shadow_color = LAST_MOVE_SHADOW if last_move else BLOCK_SHADOW
-                shadow_rect = pygame.Rect(cell_rect.x, cell_rect.y + CELL_SIZE - 14, cell_rect.w, 5)
-                pygame.draw.rect(screen, shadow_color, shadow_rect, border_radius=8)
-            elif legal:
-                outline = pygame.Surface((cell_rect.w, cell_rect.h), pygame.SRCALPHA)
-                pygame.draw.rect(outline, (113, 214, 161, 70), outline.get_rect(), width=2, border_radius=10)
-                screen.blit(outline, (cell_rect.x, cell_rect.y))
-
-    title_font = board_font[0]
-    subtitle_font = board_font[1]
-    draw_text(screen, title_font, "BLOCK BLAST ARENA", TEXT, (PANEL_X, 52))
-    draw_text(screen, subtitle_font, f"Mode: {runtime_state['mode'].upper()}", ROUNDSAFE if runtime_state["mode"] == "ai" else HUMAN, (PANEL_X, 88))
-
-    return selected_block
-
-
-def draw_hand(screen, font, raw_env, runtime_state, selected_slot, hand_slot_rects, edit_mode, edit_hand_keys):
-    hand_title_font = font[0]
-    small_font = font[1]
-
-    draw_text(screen, hand_title_font, "Hand", TEXT, (BOARD_X, 640))
-
-    for index, slot_rect in enumerate(hand_slot_rects):
-        active = index == selected_slot
-        border = HUMAN if runtime_state["mode"] == "human" else ROUNDSAFE
-        if active:
-            draw_rounded_rect(screen, (30, 42, 70), slot_rect.inflate(14, 14), radius=20, border_color=border, border_width=2)
-        else:
-            draw_rounded_rect(screen, (22, 32, 55), slot_rect.inflate(14, 14), radius=20, border_color=(68, 84, 120), border_width=1)
-
-        if edit_mode:
-            block = SHAPES[edit_hand_keys[index]]
-            available = True
-            label = edit_hand_keys[index]
-        else:
-            block = raw_env.game.hand[index]
-            available = raw_env.game.available[index]
-            label = f"Slot {index + 1}"
-
-        draw_mini_block(screen, block, slot_rect.x + 26, slot_rect.y + 20, BLOCK, BLOCK_SHADOW, available=available)
-        label_color = HUMAN if active else MUTED
-        draw_text(screen, small_font, label, label_color, (slot_rect.x + 12, slot_rect.y - 28))
-
-
-def draw_sidebar(screen, fonts, raw_env, runtime_state, buttons):
-    title_font, big_font, small_font, tiny_font = fonts
-
-    panel_rect = pygame.Rect(PANEL_X - 18, 24, PANEL_W, WINDOW_HEIGHT - 48)
-    draw_rounded_rect(screen, PANEL, panel_rect, radius=26, border_color=(68, 84, 120), border_width=1)
-
-    draw_text(screen, title_font, "Session Control", TEXT, (PANEL_X + 4, 34))
-    draw_text(screen, small_font, runtime_state["last_action_text"], MUTED, (PANEL_X + 4, 68))
-
-    stage_color = HUMAN if runtime_state["mode"] == "human" else ROUNDSAFE
-    draw_chip(screen, big_font, "Current stages", raw_env.game.stages_passed, (PANEL_X, 112), stage_color)
-    draw_chip(screen, big_font, "Lines cleared", raw_env.game.lines_destroyed, (PANEL_X + 192, 112), AI)
-    draw_chip(screen, big_font, "Blocks placed", raw_env.game.blocks_placed, (PANEL_X, 186), BLOCK)
-    draw_chip(screen, big_font, "Round state", "DONE" if runtime_state["done"] else "LIVE", (PANEL_X + 192, 186), BAD if runtime_state["done"] else GOOD)
-
-    stats_top = 264
-    draw_rounded_rect(screen, PANEL_2, pygame.Rect(PANEL_X, stats_top, PANEL_W - 8, 104), radius=20, border_color=(68, 84, 120), border_width=1)
-    draw_text(screen, small_font, "Comparison", TEXT, (PANEL_X + 14, stats_top + 12))
-    draw_text(
-        screen,
-        tiny_font,
-        f"You: last {runtime_state['human_last']} | best {runtime_state['human_best']} | runs {runtime_state['human_runs']}",
-        HUMAN,
-        (PANEL_X + 14, stats_top + 38),
+def create_env_bundle(args=None):
+    board_size = getattr(args, "board_size", DEFAULT_BOARD_SIZE)
+    raw_env = BlockBlastEnv(
+        reward_config=WATCH_REWARD_CONFIG,
+        apply_hole_penalty=False,
+        fixed_game_seed=getattr(args, "fixed_game_seed", None),
+        shape_pool=getattr(args, "shape_pool", WATCH_DEFAULTS[board_size]["shape_pool"]),
+        hand_generator=getattr(args, "hand_generator", WATCH_DEFAULTS[board_size]["hand_generator"]),
+        board_size=board_size,
     )
-    draw_text(
-        screen,
-        tiny_font,
-        f"AI:  last {runtime_state['ai_last']} | best {runtime_state['ai_best']} | runs {runtime_state['ai_runs']}",
-        ROUNDSAFE,
-        (PANEL_X + 14, stats_top + 60),
-    )
-
-    button_font = fonts[3]
-    for index, (key, payload) in enumerate(buttons.items()):
-        rect, label = payload
-        row = index // 2
-        active = False
-        if key == "human":
-            active = runtime_state["mode"] == "human"
-        elif key == "auto":
-            active = runtime_state["mode"] == "ai" and runtime_state["auto_enabled"]
-        elif key == "edit":
-            active = runtime_state["edit_mode"]
-        elif key == "ai_replay":
-            active = runtime_state["mode"] == "ai"
-
-        accent = ROUNDSAFE if key in {"ai_replay", "auto", "step"} else HUMAN
-        if key in {"undo", "redo", "new", "edit", "apply", "same_seed"}:
-            accent = BLOCK
-
-        draw_button(screen, button_font, rect, label, active=active, accent=accent)
-
-    help_y = 610
-    draw_rounded_rect(screen, PANEL_2, pygame.Rect(PANEL_X, help_y, PANEL_W - 8, 180), radius=20, border_color=(68, 84, 120), border_width=1)
-    draw_text(screen, small_font, "How to play", TEXT, (PANEL_X + 14, help_y + 12))
-    draw_text(screen, tiny_font, "1. Switch to Human Mode and click a hand slot.", MUTED, (PANEL_X + 14, help_y + 42))
-    draw_text(screen, tiny_font, "2. Click a board cell to place the piece.", MUTED, (PANEL_X + 14, help_y + 66))
-    draw_text(screen, tiny_font, "3. After your run, press AI Replay to compare the same start.", MUTED, (PANEL_X + 14, help_y + 90))
-    draw_text(screen, tiny_font, "4. In AI mode, use Auto AI or Step AI.", MUTED, (PANEL_X + 14, help_y + 114))
+    env = ActionMasker(raw_env, mask_fn)
+    obs, _ = env.reset()
+    return raw_env, env, obs
 
 
 def load_model(env, model_path):
     normalized_path = model_path[:-4] if model_path.endswith(".zip") else model_path
     if not os.path.exists(normalized_path + ".zip"):
         raise FileNotFoundError(normalized_path + ".zip")
-    return MaskablePPO.load(normalized_path, env=env)
+
+    try:
+        return MaskablePPO.load(normalized_path, env=env)
+    except ValueError as exc:
+        raise RuntimeError(
+            "Failed to load model due to env/model mismatch. "
+            "Use a CNN checkpoint like checkpoints/cnn_noholes/block_blast_cnn_noholes_v1. "
+            f"Original error: {exc}"
+        ) from exc
 
 
-def initialize_runtime(env, raw_env):
-    obs, _ = env.reset()
-    runtime_state = {
-        "obs": obs,
-        "done": False,
-        "mode": "human",
-        "auto_enabled": False,
-        "step_requested": False,
-        "last_action_text": "New round ready. Select Human Mode or AI Replay.",
-        "last_placed_cells": [],
-        "anim_frames": 0,
-        "anim_rows": [],
-        "anim_cols": [],
-        "last_auto_move": time.time(),
-        "history": [],
-        "history_index": 0,
-        "hover_cell": None,
-        "edit_mode": False,
-        "selected_slot": 0,
-        "human_runs": 0,
-        "ai_runs": 0,
-        "human_best": 0,
-        "ai_best": 0,
-        "human_last": 0,
-        "ai_last": 0,
-        "finalized_mode": None,
-        "challenge_snapshot": None,
-    }
-    runtime_state["history"] = [capture_snapshot(raw_env, runtime_state)]
-    runtime_state["challenge_snapshot"] = runtime_state["history"][0]
-    return runtime_state
+def to_color(rgb, alpha=255):
+    return QColor(rgb[0], rgb[1], rgb[2], alpha)
 
 
-def reset_round(env, raw_env, runtime_state, mode="human"):
-    obs, _ = env.reset()
-    runtime_state["obs"] = obs
-    runtime_state["done"] = False
-    runtime_state["mode"] = mode
-    runtime_state["auto_enabled"] = False
-    runtime_state["step_requested"] = False
-    runtime_state["last_action_text"] = "New round ready."
-    runtime_state["last_placed_cells"] = []
-    runtime_state["anim_frames"] = 0
-    runtime_state["anim_rows"] = []
-    runtime_state["anim_cols"] = []
-    runtime_state["last_auto_move"] = time.time()
-    runtime_state["history"] = [capture_snapshot(raw_env, runtime_state)]
-    runtime_state["history_index"] = 0
-    runtime_state["finalized_mode"] = None
-    runtime_state["challenge_snapshot"] = runtime_state["history"][0]
+def choose_font_family():
+    preferred = [
+        "Avenir Next",
+        "SF Pro Text",
+        "Helvetica Neue",
+        "Noto Sans",
+        "Segoe UI",
+        "Ubuntu",
+    ]
+    families = set(QFontDatabase.families())
+    for family in preferred:
+        if family in families:
+            return family
+
+    app = QApplication.instance()
+    if app is not None:
+        return app.font().family()
+    return "Sans Serif"
 
 
-def push_run_stats(runtime_state, mode, stages):
-    if mode == "human":
-        runtime_state["human_runs"] += 1
-        runtime_state["human_last"] = stages
-        runtime_state["human_best"] = max(runtime_state["human_best"], stages)
-    else:
-        runtime_state["ai_runs"] += 1
-        runtime_state["ai_last"] = stages
-        runtime_state["ai_best"] = max(runtime_state["ai_best"], stages)
+def point_to_cell(mouse_pos, board_x, board_y, cell_size):
+    mx, my = mouse_pos
+    if board_x <= mx < board_x + GRID_SIZE * cell_size and board_y <= my < board_y + GRID_SIZE * cell_size:
+        col = int((mx - board_x) // cell_size)
+        row = int((my - board_y) // cell_size)
+        return row, col
+    return None
 
 
-def finalize_if_needed(raw_env, runtime_state):
-    if runtime_state["done"] and runtime_state["finalized_mode"] != runtime_state["mode"]:
-        push_run_stats(runtime_state, runtime_state["mode"], raw_env.game.stages_passed)
-        runtime_state["finalized_mode"] = runtime_state["mode"]
-        runtime_state["last_action_text"] = f"{runtime_state['mode'].title()} run finished at {raw_env.game.stages_passed} stages."
+def compute_block_cells(block_shape, anchor_row, anchor_col):
+    cells = []
+    for r in range(block_shape.shape[0]):
+        for c in range(block_shape.shape[1]):
+            if block_shape[r, c] == 1:
+                cells.append((anchor_row + r, anchor_col + c))
+    return cells
 
 
-def cycle_piece_key(edit_hand_keys, selected_slot, delta):
-    current = edit_hand_keys[selected_slot]
-    idx = SHAPE_KEYS.index(current)
-    edit_hand_keys[selected_slot] = SHAPE_KEYS[(idx + delta) % len(SHAPE_KEYS)]
+def get_hand_slot_rects(start_x, start_y):
+    rects = []
+    for i in range(HAND_SIZE):
+        rects.append(QRect(start_x + i * (HAND_SLOT_W + HAND_SLOT_GAP), start_y, HAND_SLOT_W, HAND_SLOT_H))
+    return rects
 
 
-def apply_editor_setup(raw_env, runtime_state, edit_grid, edit_hand_keys):
-    raw_env.game.grid = edit_grid.copy()
-    raw_env.game.hand = [SHAPES[key].copy() for key in edit_hand_keys]
-    raw_env.game.available = [True, True, True]
-    raw_env.game.stages_passed = 0
-    raw_env.game.lines_destroyed = 0
-    raw_env.game.blocks_placed = 0
-
-    runtime_state["obs"] = raw_env._get_obs()
-    runtime_state["done"] = raw_env.game.check_game_over()
-    runtime_state["mode"] = "human"
-    runtime_state["auto_enabled"] = False
-    runtime_state["last_action_text"] = "Setup applied. You can play from this custom position."
-    runtime_state["last_placed_cells"] = []
-    runtime_state["anim_frames"] = 0
-    runtime_state["anim_rows"] = []
-    runtime_state["anim_cols"] = []
-    runtime_state["last_auto_move"] = time.time()
-    runtime_state["history"] = [capture_snapshot(raw_env, runtime_state)]
-    runtime_state["history_index"] = 0
-    runtime_state["finalized_mode"] = None
-    runtime_state["challenge_snapshot"] = runtime_state["history"][0]
+def make_button(rect, label, accent, key=None):
+    button = {"rect": rect, "label": label, "accent": accent}
+    if key is not None:
+        button["key"] = key
+    return button
 
 
-def apply_ai_move(model, env, raw_env, runtime_state):
-    if runtime_state["done"]:
-        return
+def ai_step(model, obs, raw_env, env):
+    if model is None:
+        return obs, True, "No PPO model is loaded. Use heuristic mode or start without --no-model."
 
     action_masks = mask_fn(raw_env)
     if not np.any(action_masks):
-        runtime_state["done"] = True
-        runtime_state["last_action_text"] = "No valid AI moves available."
-        return
+        return obs, True, "No valid AI moves available."
 
-    action, _ = model.predict(runtime_state["obs"], action_masks=action_masks, deterministic=True)
+    action, _ = model.predict(obs, action_masks=action_masks, deterministic=True)
     action = int(action)
+    hand_idx, row, col = decode_action(action)
+
+    next_obs, reward, done, _, _ = env.step(action)
+    msg = f"AI placed slot {hand_idx + 1} at R{row} C{col} | reward {reward:.1f}"
+    return next_obs, done, msg
+
+
+def can_place_on_grid(grid, block, row, col):
+    block_h, block_w = block.shape
+    if row + block_h > GRID_SIZE or col + block_w > GRID_SIZE:
+        return False
+    target = grid[row:row + block_h, col:col + block_w]
+    return not np.any(np.logical_and(target, block))
+
+
+def valid_actions_for_state(grid, hand, available):
+    actions = []
+    for hand_idx, is_available in enumerate(available):
+        if not is_available:
+            continue
+        block = hand[hand_idx]
+        block_h, block_w = block.shape
+        for row in range(GRID_SIZE - block_h + 1):
+            for col in range(GRID_SIZE - block_w + 1):
+                if can_place_on_grid(grid, block, row, col):
+                    actions.append(action_from_selection(hand_idx, row, col))
+    return actions
+
+
+def apply_action_to_grid(grid, block, row, col):
+    next_grid = grid.copy()
+    block_h, block_w = block.shape
+    next_grid[row:row + block_h, col:col + block_w] += block
+
+    full_rows = list(np.where(np.all(next_grid == 1, axis=1))[0])
+    full_cols = list(np.where(np.all(next_grid == 1, axis=0))[0])
+    if full_rows:
+        next_grid[full_rows, :] = 0
+    if full_cols:
+        next_grid[:, full_cols] = 0
+
+    return next_grid, len(full_rows) + len(full_cols)
+
+
+def contact_ratio_on_grid(previous_grid, block, row, col):
+    touching_edges = 0
+    external_edges = 0
+    block_h, block_w = block.shape
+
+    for block_row in range(block_h):
+        for block_col in range(block_w):
+            if block[block_row, block_col] == 0:
+                continue
+
+            board_row = row + block_row
+            board_col = col + block_col
+            for d_row, d_col in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                neighbor_block_row = block_row + d_row
+                neighbor_block_col = block_col + d_col
+                if (
+                    0 <= neighbor_block_row < block_h
+                    and 0 <= neighbor_block_col < block_w
+                    and block[neighbor_block_row, neighbor_block_col] == 1
+                ):
+                    continue
+
+                external_edges += 1
+                neighbor_row = board_row + d_row
+                neighbor_col = board_col + d_col
+                if (
+                    neighbor_row < 0
+                    or neighbor_row >= GRID_SIZE
+                    or neighbor_col < 0
+                    or neighbor_col >= GRID_SIZE
+                    or previous_grid[neighbor_row, neighbor_col] == 1
+                ):
+                    touching_edges += 1
+
+    return 0.0 if external_edges == 0 else touching_edges / external_edges
+
+
+def empty_region_stats(grid):
+    visited = np.zeros_like(grid, dtype=bool)
+    largest_region = 0
+    region_count = 0
+
+    for row in range(GRID_SIZE):
+        for col in range(GRID_SIZE):
+            if grid[row, col] != 0 or visited[row, col]:
+                continue
+
+            queue = [(row, col)]
+            visited[row, col] = True
+            region_size = 0
+            while queue:
+                current_row, current_col = queue.pop()
+                region_size += 1
+                for d_row, d_col in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    next_row = current_row + d_row
+                    next_col = current_col + d_col
+                    if (
+                        0 <= next_row < GRID_SIZE
+                        and 0 <= next_col < GRID_SIZE
+                        and not visited[next_row, next_col]
+                        and grid[next_row, next_col] == 0
+                    ):
+                        visited[next_row, next_col] = True
+                        queue.append((next_row, next_col))
+
+            region_count += 1
+            largest_region = max(largest_region, region_size)
+
+    return largest_region, region_count
+
+
+def heuristic_board_score(grid, hand, available):
+    valid_actions_after = len(valid_actions_for_state(grid, hand, available))
+    rows = grid.sum(axis=1)
+    cols = grid.sum(axis=0)
+    line_potential = float(np.sum((rows / GRID_SIZE) ** 3) + np.sum((cols / GRID_SIZE) ** 3))
+    largest_empty_region, empty_regions = empty_region_stats(grid)
+    filled_cells = int(grid.sum())
+
+    return (
+        valid_actions_after * 0.65
+        + line_potential * 5.0
+        + largest_empty_region * 0.25
+        - empty_regions * 0.5
+        - max(filled_cells - int(BOARD_CELLS * 0.6875), 0) * 0.4
+    )
+
+
+def heuristic_evaluate_action(grid, hand, available, action):
+    hand_idx, row, col = decode_action(action)
+    block = hand[hand_idx]
+    next_grid, lines_cleared = apply_action_to_grid(grid, block, row, col)
+    next_available = list(available)
+    next_available[hand_idx] = False
+    stage_completed = not any(next_available)
+
+    contact_ratio = contact_ratio_on_grid(grid, block, row, col)
+    contact_bonus = max(contact_ratio - 0.40, 0.0) * 28.0
+    contact_penalty = max(0.40 - contact_ratio, 0.0) * 18.0
+    valid_actions_after = len(valid_actions_for_state(next_grid, hand, next_available))
+    no_move_penalty = 160.0 if (not stage_completed and valid_actions_after == 0) else 0.0
+
+    score = (
+        lines_cleared * 60.0
+        + (lines_cleared ** 2) * 25.0
+        + contact_bonus
+        - contact_penalty
+        + heuristic_board_score(next_grid, hand, next_available)
+        + (8.0 if stage_completed else 0.0)
+        - no_move_penalty
+    )
+
+    return {
+        "score": score,
+        "lines_cleared": lines_cleared,
+        "contact_ratio": contact_ratio,
+        "valid_actions_after": valid_actions_after,
+    }
+
+
+def choose_heuristic_action(raw_env):
+    grid = raw_env.game.grid
+    hand = raw_env.game.hand
+    available = raw_env.game.available
+    actions = valid_actions_for_state(grid, hand, available)
+    if not actions:
+        return None, None
+
+    ranked = []
+    for action in actions:
+        result = heuristic_evaluate_action(grid, hand, available, action)
+        ranked.append((result["score"], action, result))
+
+    ranked.sort(reverse=True, key=lambda item: item[0])
+    best_score, best_action, best_result = ranked[0]
+    best_result["score"] = best_score
+    return best_action, best_result
+
+
+def heuristic_step(obs, raw_env, env):
+    action, decision = choose_heuristic_action(raw_env)
+    if action is None:
+        return obs, True, "No valid heuristic moves available."
 
     hand_idx, row, col = decode_action(action)
-    block_matrix = raw_env.game.hand[hand_idx]
-    runtime_state["last_placed_cells"] = compute_placed_cells(block_matrix, row, col)
-
-    runtime_state["obs"], reward, runtime_state["done"], _, info = env.step(action)
-    runtime_state["last_action_text"] = f"AI: slot {hand_idx + 1} at R{row} C{col} | reward {reward:.1f}"
-    runtime_state["anim_rows"] = info.get("anim_rows", [])
-    runtime_state["anim_cols"] = info.get("anim_cols", [])
-    runtime_state["anim_frames"] = 15 if (runtime_state["anim_rows"] or runtime_state["anim_cols"]) else 0
-    runtime_state["last_auto_move"] = time.time()
-
-    push_history(raw_env, runtime_state)
+    next_obs, reward, done, _, _ = env.step(action)
+    msg = (
+        f"Heuristic placed slot {hand_idx + 1} at R{row} C{col} | "
+        f"score {decision['score']:.1f} | contact {decision['contact_ratio']:.2f} | reward {reward:.1f}"
+    )
+    return next_obs, done, msg
 
 
-def apply_human_move(env, raw_env, runtime_state, selected_slot, board_cell):
-    if runtime_state["done"] or runtime_state["mode"] != "human" or runtime_state["edit_mode"]:
-        return
+class ArenaWidget(QWidget):
+    def __init__(self, model, args):
+        super().__init__()
+        self.model = model
+        self.args = args
 
-    if not raw_env.game.available[selected_slot]:
-        runtime_state["last_action_text"] = f"Slot {selected_slot + 1} is not available."
-        return
+        self.setWindowTitle("Block Blast Arena - PySide6")
+        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMouseTracking(True)
 
-    row, col = board_cell
-    block_matrix = raw_env.game.hand[selected_slot]
-    if not raw_env.game.can_place(block_matrix, row, col):
-        runtime_state["last_action_text"] = f"Invalid placement for slot {selected_slot + 1}."
-        return
+        font_family = choose_font_family()
+        self.title_font = QFont(font_family, 30, QFont.Bold)
+        self.subtitle_font = QFont(font_family, 20, QFont.Bold)
+        self.body_font = QFont(font_family, 14)
+        self.button_font = QFont(font_family, 16, QFont.Bold)
 
-    action = action_from_selection(selected_slot, row, col)
-    runtime_state["last_placed_cells"] = compute_placed_cells(block_matrix, row, col)
-    runtime_state["obs"], reward, runtime_state["done"], _, info = env.step(action)
-    runtime_state["last_action_text"] = f"You placed slot {selected_slot + 1} at R{row} C{col} | reward {reward:.1f}"
-    runtime_state["anim_rows"] = info.get("anim_rows", [])
-    runtime_state["anim_cols"] = info.get("anim_cols", [])
-    runtime_state["anim_frames"] = 15 if (runtime_state["anim_rows"] or runtime_state["anim_cols"]) else 0
-    runtime_state["last_auto_move"] = time.time()
-    push_history(raw_env, runtime_state)
+        self.scene = "menu"
+        self.mouse_pos = (0, 0)
+        self.reset_drag_state()
+
+        self.last_error = ""
+        self.model_catalog = discover_models()
+        self.model_status = "Model loaded: " + model_display_name(args.model_path) if model is not None else "No PPO model loaded."
+        self.model_combo = QComboBox(self)
+        self.model_combo.setFont(QFont(font_family, 12))
+        self.model_combo.setGeometry(840, 646, 700, 38)
+        self.model_combo.currentIndexChanged.connect(self.handle_model_selection)
+        self.populate_model_combo()
+
+        self.init_menu_scene()
+
+        self.loop_timer = QTimer(self)
+        self.loop_timer.setInterval(int(1000 / FPS))
+        self.loop_timer.timeout.connect(self.on_tick)
+        self.loop_timer.start()
+
+    def populate_model_combo(self):
+        self.model_combo.blockSignals(True)
+        self.model_combo.clear()
+        self.model_combo.addItem("No PPO model (heuristic/manual only)", None)
+        current_path = os.path.normpath(self.args.model_path) if getattr(self.args, "model_path", None) else ""
+        selected_index = 0
+
+        for model_info in self.model_catalog:
+            label = (
+                f"{model_info['name']} | {model_info['board_size']}x{model_info['board_size']} | "
+                f"mean {model_info['mean_stage']} | max {model_info['max_stage']}"
+            )
+            self.model_combo.addItem(label, model_info)
+            if os.path.normpath(model_info["path"]) == current_path:
+                selected_index = self.model_combo.count() - 1
+
+        self.model_combo.setCurrentIndex(selected_index)
+        self.model_combo.blockSignals(False)
+
+    def handle_model_selection(self, index):
+        if index < 0:
+            return
+
+        model_info = self.model_combo.itemData(index)
+        if model_info is None:
+            self.model = None
+            self.args.model_path = None
+            self.model_status = "No PPO model loaded. Heuristic and manual modes are available."
+            self.init_menu_scene()
+            self.update()
+            return
+
+        self.args.model_path = model_info["path"]
+        self.args.board_size = model_info["board_size"]
+        self.args.shape_pool = model_info["shape_pool"]
+        self.args.hand_generator = model_info["hand_generator"]
+        configure_board_mode(self.args.board_size)
+
+        try:
+            _raw, env, _obs = create_env_bundle(self.args)
+            self.model = load_model(env, self.args.model_path)
+            self.last_error = ""
+            self.model_status = (
+                f"Loaded {model_info['name']} | board {self.args.board_size}x{self.args.board_size} | "
+                f"mean {model_info['mean_stage']} | max {model_info['max_stage']}"
+            )
+        except Exception as exc:
+            self.model = None
+            self.last_error = f"Could not load selected model: {exc}"
+            self.model_status = "Selected model failed to load. Heuristic/manual modes still work."
+            traceback.print_exc()
+
+        self.init_menu_scene()
+        self.update()
+
+    def init_menu_scene(self):
+        self.scene = "menu"
+        base_x = 118
+        base_y = 232
+        gap = MENU_BTN_H + MENU_BTN_GAP
+        self.menu_buttons = [
+            make_button(QRect(base_x, base_y + index * gap, MENU_BTN_W, MENU_BTN_H), label, accent, key)
+            for index, (key, label, accent) in enumerate(
+                [
+                    ("solver", "Let AI solve your position", HUMAN),
+                    ("watch", "Watch AI play a game", AI),
+                    ("heuristic", "Watch heuristic play", WARN),
+                    ("versus", "You vs the AI", (175, 121, 255)),
+                ]
+            )
+        ]
+        self.menu_status = "Choose AI, heuristic, or a manual comparison mode."
+
+    def init_solver_scene(self):
+        self.scene = "solver"
+        self.solver_raw, self.solver_env, self.solver_obs = create_env_bundle(self.args)
+        self.solver_edit_grid = self.solver_raw.game.grid.copy()
+        self.solver_edit_hand_keys = [shape_key_from_matrix(block) for block in self.solver_raw.game.hand]
+        self.solver_solving = False
+        self.solver_done = False
+        self.solver_status = "Edit board + hand, then click Start AI Solve."
+        self.solver_last_step_time = time.time()
+        self.solver_buttons = {
+            "start": QRect(644, 240, 250, 52),
+            "reset": QRect(916, 240, 250, 52),
+            "back": QRect(1188, 240, 250, 52),
+        }
+
+    def init_watch_scene(self, policy="ai"):
+        self.scene = "watch"
+        self.watch_policy = policy
+        self.watch_raw, self.watch_env, self.watch_obs = create_env_bundle(self.args)
+        self.watch_done = False
+        self.watch_status = "Heuristic is playing this random run." if policy == "heuristic" else "AI is playing this random run."
+        self.watch_last_step_time = 0.0
+        self.watch_buttons = {
+            "new": QRect(642, 182, 270, 50),
+            "back": QRect(642, 246, 270, 50),
+        }
+
+    def init_versus_scene(self):
+        self.scene = "versus"
+        self.vs_h_raw, self.vs_h_env, self.vs_h_obs = create_env_bundle(self.args)
+        self.vs_a_raw, self.vs_a_env, self.vs_a_obs = create_env_bundle(self.args)
+
+        initial_state = capture_game_state(self.vs_h_raw.game)
+        restore_game_state(self.vs_a_raw.game, initial_state)
+        self.vs_a_obs = self.vs_a_raw._get_obs()
+
+        self.vs_h_done = False
+        self.vs_a_done = False
+        self.vs_locked = False
+        self.vs_winner = None
+        self.vs_status = "Drag a piece from your hand and drop it on your board."
+
+        self.reset_drag_state()
+
+        self.vs_buttons = {
+            "new": QRect(1220, 182, 340, 50),
+            "back": QRect(1220, 246, 340, 50),
+        }
+
+    def on_tick(self):
+        try:
+            now = time.time()
+
+            if self.drag_active:
+                vx, vy = self.drag_visual_pos
+                tx, ty = self.drag_target_pos
+                self.drag_visual_pos = (vx + (tx - vx) * 0.42, vy + (ty - vy) * 0.42)
+
+            if self.scene == "solver" and self.solver_solving and (not self.solver_done):
+                if now - self.solver_last_step_time >= self.args.ai_interval:
+                    self.solver_obs, self.solver_done, msg = ai_step(
+                        self.model,
+                        self.solver_obs,
+                        self.solver_raw,
+                        self.solver_env,
+                    )
+                    self.solver_status = msg
+                    self.solver_last_step_time = now
+                    if self.solver_done:
+                        self.solver_status = f"AI solve finished at stage {self.solver_raw.game.stages_passed}."
+
+            if self.scene == "watch" and (not self.watch_done):
+                if now - self.watch_last_step_time >= self.args.ai_interval:
+                    if self.watch_policy == "heuristic":
+                        self.watch_obs, self.watch_done, msg = heuristic_step(
+                            self.watch_obs,
+                            self.watch_raw,
+                            self.watch_env,
+                        )
+                    else:
+                        self.watch_obs, self.watch_done, msg = ai_step(
+                            self.model,
+                            self.watch_obs,
+                            self.watch_raw,
+                            self.watch_env,
+                        )
+                    self.watch_status = msg
+                    self.watch_last_step_time = now
+                    if self.watch_done:
+                        actor = "Heuristic" if self.watch_policy == "heuristic" else "AI"
+                        self.watch_status = f"{actor} game ended at stage {self.watch_raw.game.stages_passed}."
+
+        except Exception as exc:
+            self.last_error = f"Runtime error: {exc}"
+            traceback.print_exc()
+            if self.scene == "solver":
+                self.solver_solving = False
+                self.solver_done = True
+                self.solver_status = self.last_error
+            elif self.scene == "watch":
+                self.watch_done = True
+                self.watch_status = self.last_error
+            elif self.scene == "versus":
+                self.vs_locked = True
+                self.vs_status = self.last_error
+
+        self.update()
+
+    def reset_drag_state(self):
+        self.drag_active = False
+        self.drag_slot = None
+        self.drag_offset_cell = (0, 0)
+        self.drag_visual_pos = (0.0, 0.0)
+        self.drag_target_pos = (0.0, 0.0)
+
+    def paintEvent(self, _event):
+        self.model_combo.setVisible(self.scene == "menu")
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        self.draw_background(painter)
+
+        if self.scene == "menu":
+            self.draw_menu_scene(painter)
+        elif self.scene == "solver":
+            self.draw_solver_scene(painter)
+        elif self.scene == "watch":
+            self.draw_watch_scene(painter)
+        elif self.scene == "versus":
+            self.draw_versus_scene(painter)
+
+        painter.end()
+
+    def mouseMoveEvent(self, event):
+        self.mouse_pos = (event.position().x(), event.position().y())
+        if self.drag_active:
+            self.drag_target_pos = self.mouse_pos
+
+    def mousePressEvent(self, event):
+        pos = (event.position().x(), event.position().y())
+
+        try:
+            if self.scene == "menu":
+                self.handle_menu_click(pos)
+                return
+
+            if self.scene == "solver":
+                self.handle_solver_click(pos, event.button())
+                return
+
+            if self.scene == "watch":
+                self.handle_watch_click(pos, event.button())
+                return
+
+            if self.scene == "versus":
+                self.handle_versus_mouse_press(pos, event.button())
+                return
+        except Exception as exc:
+            self.last_error = f"Input error: {exc}"
+            traceback.print_exc()
+            if self.scene == "versus":
+                self.vs_status = self.last_error
+
+    def mouseReleaseEvent(self, event):
+        if self.scene != "versus":
+            return
+
+        if event.button() != Qt.LeftButton:
+            return
+
+        if not self.drag_active or self.drag_slot is None:
+            return
+
+        try:
+            mouse_pos = (event.position().x(), event.position().y())
+            slot = self.drag_slot
+            block = self.vs_h_raw.game.hand[slot]
+            drop = point_to_cell(mouse_pos, DUAL_BOARD_X_LEFT, DUAL_BOARD_Y, DUAL_CELL)
+
+            if drop is not None:
+                drop_row, drop_col = drop
+                anchor_row = drop_row - self.drag_offset_cell[0]
+                anchor_col = drop_col - self.drag_offset_cell[1]
+                self.try_human_drop(slot, anchor_row, anchor_col)
+        finally:
+            self.reset_drag_state()
+
+    def handle_menu_click(self, pos):
+        p = QPoint(int(pos[0]), int(pos[1]))
+        for btn in self.menu_buttons:
+            if btn["rect"].contains(p):
+                if btn["key"] == "solver":
+                    self.init_solver_scene()
+                elif btn["key"] == "watch":
+                    self.init_watch_scene()
+                elif btn["key"] == "heuristic":
+                    self.init_watch_scene(policy="heuristic")
+                elif btn["key"] == "versus":
+                    self.init_versus_scene()
+                return
+
+    def handle_solver_click(self, pos, button):
+        p = QPoint(int(pos[0]), int(pos[1]))
+
+        if button == Qt.LeftButton:
+            if self.solver_buttons["start"].contains(p):
+                self.apply_solver_setup()
+                return
+            if self.solver_buttons["reset"].contains(p):
+                self.init_solver_scene()
+                return
+            if self.solver_buttons["back"].contains(p):
+                self.init_menu_scene()
+                return
+
+        if self.solver_solving:
+            return
+
+        if button == Qt.LeftButton:
+            cell = point_to_cell(pos, SINGLE_BOARD_X, SINGLE_BOARD_Y, SINGLE_CELL)
+            if cell is not None:
+                r, c = cell
+                self.solver_edit_grid[r, c] = 0 if self.solver_edit_grid[r, c] == 1 else 1
+                return
+
+        slots = get_hand_slot_rects(SINGLE_BOARD_X + 4, SINGLE_BOARD_Y + SINGLE_BOARD_SIZE + 56)
+        for i, rect in enumerate(slots):
+            if rect.contains(p):
+                current = self.solver_edit_hand_keys[i]
+                idx = SHAPE_KEYS.index(current)
+                if button == Qt.LeftButton:
+                    self.solver_edit_hand_keys[i] = SHAPE_KEYS[(idx + 1) % len(SHAPE_KEYS)]
+                elif button == Qt.RightButton:
+                    self.solver_edit_hand_keys[i] = SHAPE_KEYS[(idx - 1) % len(SHAPE_KEYS)]
+                return
+
+    def handle_watch_click(self, pos, button):
+        if button != Qt.LeftButton:
+            return
+
+        p = QPoint(int(pos[0]), int(pos[1]))
+        if self.watch_buttons["new"].contains(p):
+            self.init_watch_scene(policy=self.watch_policy)
+            return
+        if self.watch_buttons["back"].contains(p):
+            self.init_menu_scene()
+            return
+
+    def handle_versus_mouse_press(self, pos, button):
+        if button != Qt.LeftButton:
+            return
+
+        p = QPoint(int(pos[0]), int(pos[1]))
+
+        if self.vs_buttons["new"].contains(p):
+            self.init_versus_scene()
+            return
+        if self.vs_buttons["back"].contains(p):
+            self.init_menu_scene()
+            return
+
+        if self.vs_locked or self.vs_h_done:
+            return
+
+        slots = get_hand_slot_rects(DUAL_BOARD_X_LEFT, DUAL_BOARD_Y + DUAL_BOARD_SIZE + 50)
+        for idx, rect in enumerate(slots):
+            if rect.contains(p) and self.vs_h_raw.game.available[idx]:
+                block = self.vs_h_raw.game.hand[idx]
+                offset = self.drag_offset_from_click(rect, block, pos)
+                if offset is None:
+                    self.vs_status = "Grab one highlighted cell of the shape to drag it."
+                    return
+
+                self.drag_active = True
+                self.drag_slot = idx
+                self.drag_offset_cell = offset
+                self.drag_target_pos = pos
+                self.drag_visual_pos = pos
+                return
+
+    def drag_offset_from_click(self, slot_rect, block, pos):
+        lx = pos[0] - (slot_rect.x() + HAND_BLOCK_OFFSET_X)
+        ly = pos[1] - (slot_rect.y() + HAND_BLOCK_OFFSET_Y)
+
+        fx = lx / max(1.0, float(MINI_CELL))
+        fy = ly / max(1.0, float(MINI_CELL))
+
+        occupied = []
+        for r in range(block.shape[0]):
+            for c in range(block.shape[1]):
+                if block[r, c] == 1:
+                    occupied.append((r, c))
+
+        if not occupied:
+            return None
+
+        best = None
+        best_dist = None
+        for r, c in occupied:
+            dist = (fy - (r + 0.5)) ** 2 + (fx - (c + 0.5)) ** 2
+            if best_dist is None or dist < best_dist:
+                best_dist = dist
+                best = (r, c)
+        return best
+
+    def apply_solver_setup(self):
+        self.solver_raw.game.grid = self.solver_edit_grid.copy()
+        self.solver_raw.game.hand = [SHAPE_LIBRARY[key].copy() for key in self.solver_edit_hand_keys]
+        self.solver_raw.game.available = [True, True, True]
+        self.solver_raw.game.stages_passed = 0
+        self.solver_raw.game.lines_destroyed = 0
+        self.solver_raw.game.blocks_placed = 0
+
+        self.solver_obs = self.solver_raw._get_obs()
+        self.solver_done = self.solver_raw.game.check_game_over()
+        self.solver_solving = True
+        self.solver_last_step_time = time.time()
+        if self.solver_done:
+            self.solver_status = "Setup has no legal moves."
+        else:
+            self.solver_status = "AI started solving your setup."
+
+    def try_human_drop(self, slot_idx, anchor_row, anchor_col):
+        game = self.vs_h_raw.game
+        if not game.available[slot_idx]:
+            self.vs_status = f"Slot {slot_idx + 1} is not available."
+            return
+
+        block = game.hand[slot_idx]
+        if not game.can_place(block, anchor_row, anchor_col):
+            self.vs_status = "Invalid placement."
+            return
+
+        action = action_from_selection(slot_idx, anchor_row, anchor_col)
+        self.vs_h_obs, reward, self.vs_h_done, _, _ = self.vs_h_env.step(action)
+        self.vs_status = f"You placed slot {slot_idx + 1} at R{anchor_row} C{anchor_col} | reward {reward:.1f}"
+
+        self.ai_reply_in_versus()
+        self.sync_vs_hands_when_stage_refreshes()
+        self.resolve_versus_winner()
+
+    def ai_reply_in_versus(self):
+        if self.vs_a_done:
+            return
+        self.vs_a_obs, self.vs_a_done, self.vs_status = ai_step(
+            self.model,
+            self.vs_a_obs,
+            self.vs_a_raw,
+            self.vs_a_env,
+        )
+
+    def sync_vs_hands_when_stage_refreshes(self):
+        h_game = self.vs_h_raw.game
+        a_game = self.vs_a_raw.game
+
+        if all(h_game.available) and all(a_game.available):
+            a_game.hand = [block.copy() for block in h_game.hand]
+            a_game.available = [True, True, True]
+            self.vs_a_obs = self.vs_a_raw._get_obs()
+
+    def resolve_versus_winner(self):
+        if self.vs_winner is not None:
+            return
+
+        if (not self.vs_h_done) and (not self.vs_a_done):
+            return
+
+        if self.vs_h_done and (not self.vs_a_done):
+            self.vs_winner = "AI wins (you ran out of moves first)."
+        elif self.vs_a_done and (not self.vs_h_done):
+            self.vs_winner = "You win (AI ran out of moves first)."
+        else:
+            h_stage = self.vs_h_raw.game.stages_passed
+            a_stage = self.vs_a_raw.game.stages_passed
+            if h_stage > a_stage:
+                self.vs_winner = "You win on stages."
+            elif a_stage > h_stage:
+                self.vs_winner = "AI wins on stages."
+            else:
+                h_lines = self.vs_h_raw.game.lines_destroyed
+                a_lines = self.vs_a_raw.game.lines_destroyed
+                if h_lines > a_lines:
+                    self.vs_winner = "You win on cleared lines."
+                elif a_lines > h_lines:
+                    self.vs_winner = "AI wins on cleared lines."
+                else:
+                    self.vs_winner = "Draw."
+
+        self.vs_locked = True
+        self.vs_status = self.vs_winner
+
+    def draw_background(self, painter):
+        painter.fillRect(self.rect(), to_color(BG))
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(to_color((61, 112, 202), 84))
+        painter.drawEllipse(60, -120, 520, 420)
+        painter.setBrush(to_color((127, 228, 171), 62))
+        painter.drawEllipse(1200, -80, 430, 360)
+        painter.setBrush(to_color((255, 183, 102), 48))
+        painter.drawEllipse(1280, 660, 340, 260)
+
+    def draw_rounded_block(self, painter, rect, fill, radius=16, border=None, border_width=1):
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(fill)
+        painter.drawRoundedRect(rect, radius, radius)
+        if border is not None:
+            pen = QPen(border)
+            pen.setWidth(border_width)
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(rect, radius, radius)
+
+    def draw_label(self, painter, text, x, y, color, font):
+        painter.setPen(color)
+        painter.setFont(font)
+        painter.drawText(x, y, text)
+
+    def draw_metric_card(self, painter, rect, title, value, accent):
+        self.draw_rounded_block(
+            painter,
+            rect,
+            to_color(PANEL_2),
+            radius=14,
+            border=to_color(accent),
+            border_width=1,
+        )
+        self.draw_label(painter, title, rect.x() + 12, rect.y() + 24, to_color(MUTED), self.body_font)
+        self.draw_label(painter, value, rect.x() + 12, rect.y() + 56, to_color(TEXT), self.subtitle_font)
+
+    def draw_game_metrics(self, painter, game, x, y, done=None):
+        cards = [
+            ("Stages", str(game.stages_passed), HUMAN),
+            ("Lines", str(game.lines_destroyed), AI),
+            ("Blocks", str(game.blocks_placed), WARN),
+        ]
+        if done is not None:
+            cards.append(("State", "DONE" if done else "LIVE", BAD if done else GOOD))
+
+        for index, (title, value, accent) in enumerate(cards):
+            self.draw_metric_card(painter, QRect(x + index * 202, y, 188, 74), title, value, accent)
+
+    def draw_button(self, painter, button):
+        hovered = button["rect"].contains(QPoint(int(self.mouse_pos[0]), int(self.mouse_pos[1])))
+        fill = to_color(button["accent"] if hovered else PANEL_2)
+        border = to_color(WHITE if hovered else (74, 92, 126))
+        self.draw_rounded_block(painter, button["rect"], fill, radius=16, border=border, border_width=1)
+
+        painter.setPen(to_color(WHITE))
+        painter.setFont(self.button_font)
+        painter.drawText(button["rect"], Qt.AlignCenter, button["label"])
+
+    def draw_board(self, painter, grid, board_x, board_y, cell_size, title, accent, ghost_cells=None, ghost_valid=True):
+        outer = QRect(board_x - 18, board_y - 18, GRID_SIZE * cell_size + 36, GRID_SIZE * cell_size + 36)
+        inner = QRect(board_x - 6, board_y - 6, GRID_SIZE * cell_size + 12, GRID_SIZE * cell_size + 12)
+        self.draw_rounded_block(
+            painter,
+            outer,
+            to_color(PANEL),
+            radius=22,
+            border=to_color((74, 92, 126)),
+            border_width=1,
+        )
+        self.draw_rounded_block(painter, inner, to_color(BOARD_BG), radius=18)
+
+        ghost_set = set(ghost_cells or [])
+        for row in range(GRID_SIZE):
+            for col in range(GRID_SIZE):
+                cell = QRect(
+                    int(board_x + col * cell_size),
+                    int(board_y + row * cell_size),
+                    int(cell_size - 3),
+                    int(cell_size - 3),
+                )
+                occupied = grid[row, col] == 1
+                self.draw_rounded_block(
+                    painter,
+                    cell,
+                    to_color(CELL_FILL if occupied else CELL_BG),
+                    radius=8,
+                )
+
+                if occupied:
+                    shadow = QRect(cell.x(), cell.y() + cell.height() - 5, cell.width(), 4)
+                    self.draw_rounded_block(painter, shadow, to_color(CELL_SHADOW), radius=5)
+
+                if (row, col) in ghost_set:
+                    ghost_color = to_color(GHOST_VALID if ghost_valid else GHOST_INVALID, 150)
+                    self.draw_rounded_block(painter, cell, ghost_color, radius=8)
+
+        self.draw_label(painter, title, board_x, board_y - 44, to_color(accent), self.subtitle_font)
+        self.draw_label(painter, f"{GRID_SIZE} x {GRID_SIZE}", board_x + 180, board_y - 44, to_color(MUTED), self.body_font)
+
+    def draw_hand(self, painter, hand, available, slot_rects, title, accent, selected_slot=None, key_labels=None):
+        self.draw_label(painter, title, slot_rects[0].x(), slot_rects[0].y() - 36, to_color(TEXT), self.subtitle_font)
+
+        for idx, rect in enumerate(slot_rects):
+            selected = selected_slot == idx
+            border_color = to_color(accent if selected else (75, 92, 123))
+
+            self.draw_rounded_block(
+                painter,
+                rect.adjusted(-6, -6, 6, 6),
+                to_color(PANEL_2),
+                radius=16,
+                border=border_color,
+                border_width=2 if selected else 1,
+            )
+            self.draw_rounded_block(painter, rect, to_color((26, 39, 68)), radius=12)
+
+            block = hand[idx]
+            for r in range(block.shape[0]):
+                for c in range(block.shape[1]):
+                    if block[r, c] != 1:
+                        continue
+                    bx = rect.x() + HAND_BLOCK_OFFSET_X + c * MINI_CELL
+                    by = rect.y() + HAND_BLOCK_OFFSET_Y + r * MINI_CELL
+                    brect = QRect(int(bx), int(by), MINI_CELL - 2, MINI_CELL - 2)
+                    fill = to_color(CELL_FILL if available[idx] else DIM)
+                    sh = to_color(CELL_SHADOW if available[idx] else (65, 73, 96))
+                    self.draw_rounded_block(painter, brect, fill, radius=6)
+                    shadow = QRect(brect.x(), brect.y() + brect.height() - 4, brect.width(), 3)
+                    self.draw_rounded_block(painter, shadow, sh, radius=4)
+
+            label = key_labels[idx] if key_labels is not None else f"Slot {idx + 1}"
+            self.draw_label(
+                painter,
+                label,
+                rect.x() + 8,
+                rect.y() - 12,
+                to_color(accent if selected else MUTED),
+                self.body_font,
+            )
+
+    def draw_menu_scene(self, painter):
+        self.draw_label(painter, "Block Blast Arena", 86, 72, to_color(TEXT), self.title_font)
+        self.draw_label(painter, "Choose a model, then choose one mode to start", 90, 110, to_color(MUTED), self.subtitle_font)
+
+        left_panel = QRect(80, 150, 700, 690)
+        right_panel = QRect(812, 150, 790, 690)
+
+        self.draw_rounded_block(
+            painter,
+            left_panel,
+            to_color(PANEL),
+            radius=24,
+            border=to_color((78, 96, 128)),
+            border_width=1,
+        )
+        self.draw_rounded_block(
+            painter,
+            right_panel,
+            to_color(PANEL),
+            radius=24,
+            border=to_color((78, 96, 128)),
+            border_width=1,
+        )
+
+        for button in self.menu_buttons:
+            self.draw_button(painter, button)
+
+        self.draw_label(painter, self.menu_status, 96, 650, to_color(MUTED), self.body_font)
+        self.draw_label(painter, self.model_status, 96, 690, to_color(AI if self.model is not None else WARN), self.body_font)
+        self.draw_label(painter, f"Current board: {self.args.board_size} x {self.args.board_size}", 96, 724, to_color(MUTED), self.body_font)
+        self.draw_label(painter, f"Generator: {self.args.hand_generator} | pool: {self.args.shape_pool}", 96, 758, to_color(MUTED), self.body_font)
+
+        self.draw_label(painter, "Modes", 840, 202, to_color(TEXT), self.subtitle_font)
+        mode_lines = [
+            ("1. Let AI solve your position", "Build a board and hand, then let the loaded model continue.", HUMAN),
+            ("2. Watch AI play a game", "Autoplay with the selected PPO model.", AI),
+            ("3. Watch heuristic play", "Scores every legal move and always picks the best one.", WARN),
+            ("4. You vs the AI", "Split boards. Your valid drop triggers one AI move.", (175, 121, 255)),
+        ]
+        for index, (title, detail, accent) in enumerate(mode_lines):
+            y = 250 + index * 84
+            self.draw_label(painter, title, 840, y, to_color(accent), self.subtitle_font)
+            self.draw_label(painter, detail, 840, y + 30, to_color(MUTED), self.body_font)
+
+        self.draw_label(painter, "Model selector", 840, 612, to_color(TEXT), self.subtitle_font)
+        self.draw_label(painter, "Metrics are shown as mean/max stages when local data is known.", 840, 714, to_color(MUTED), self.body_font)
+
+        if self.last_error:
+            self.draw_label(painter, self.last_error[:90], 840, 760, to_color(BAD), self.body_font)
+
+    def draw_solver_scene(self, painter):
+        right_panel = QRect(622, 130, 968, 692)
+        self.draw_rounded_block(
+            painter,
+            right_panel,
+            to_color(PANEL),
+            radius=24,
+            border=to_color((78, 96, 128)),
+            border_width=1,
+        )
+
+        board_grid = self.solver_raw.game.grid if self.solver_solving else self.solver_edit_grid
+        self.draw_board(
+            painter,
+            board_grid,
+            SINGLE_BOARD_X,
+            SINGLE_BOARD_Y,
+            SINGLE_CELL,
+            "Custom Position",
+            HUMAN,
+        )
+
+        slots = get_hand_slot_rects(SINGLE_BOARD_X + 6, SINGLE_BOARD_Y + SINGLE_BOARD_SIZE + 56)
+        if self.solver_solving:
+            hand = self.solver_raw.game.hand
+            available = self.solver_raw.game.available
+            labels = [f"Slot {i + 1}" for i in range(HAND_SIZE)]
+        else:
+            hand = [SHAPE_LIBRARY[k] for k in self.solver_edit_hand_keys]
+            available = [True, True, True]
+            labels = self.solver_edit_hand_keys
+
+        self.draw_hand(
+            painter,
+            hand,
+            available,
+            slots,
+            "Hand",
+            HUMAN,
+            selected_slot=None,
+            key_labels=labels,
+        )
+
+        self.draw_label(painter, "Let AI Solve Your Position", 644, 168, to_color(TEXT), self.title_font)
+        self.draw_label(painter, self.solver_status, 644, 208, to_color(MUTED), self.body_font)
+
+        button_specs = {
+            "start": ("Start AI Solve", AI),
+            "reset": ("Reset Editor", WARN),
+            "back": ("Back To Menu", BAD),
+        }
+        for key, rect in self.solver_buttons.items():
+            label, accent = button_specs[key]
+            self.draw_button(painter, make_button(rect, label, accent))
+
+        self.draw_game_metrics(painter, self.solver_raw.game, 644, 334, done=self.solver_done)
+
+        if not self.solver_solving:
+            self.draw_label(painter, "Editor controls:", 644, 494, to_color(TEXT), self.subtitle_font)
+            self.draw_label(painter, "- Left click board cell: toggle filled / empty", 644, 528, to_color(MUTED), self.body_font)
+            self.draw_label(painter, "- Left click hand slot: next shape", 644, 556, to_color(MUTED), self.body_font)
+            self.draw_label(painter, "- Right click hand slot: previous shape", 644, 584, to_color(MUTED), self.body_font)
+
+    def draw_watch_scene(self, painter):
+        right_panel = QRect(622, 130, 968, 692)
+        self.draw_rounded_block(
+            painter,
+            right_panel,
+            to_color(PANEL),
+            radius=24,
+            border=to_color((78, 96, 128)),
+            border_width=1,
+        )
+
+        title = "Heuristic Board" if self.watch_policy == "heuristic" else "AI Board"
+        accent = WARN if self.watch_policy == "heuristic" else AI
+        self.draw_board(
+            painter,
+            self.watch_raw.game.grid,
+            SINGLE_BOARD_X,
+            SINGLE_BOARD_Y,
+            SINGLE_CELL,
+            title,
+            accent,
+        )
+
+        slots = get_hand_slot_rects(SINGLE_BOARD_X + 6, SINGLE_BOARD_Y + SINGLE_BOARD_SIZE + 56)
+        self.draw_hand(
+            painter,
+            self.watch_raw.game.hand,
+            self.watch_raw.game.available,
+            slots,
+            "Heuristic Hand" if self.watch_policy == "heuristic" else "AI Hand",
+            accent,
+        )
+
+        self.draw_label(painter, "Watch Heuristic Play" if self.watch_policy == "heuristic" else "Watch AI Play", 644, 168, to_color(TEXT), self.title_font)
+        self.draw_label(painter, self.watch_status, 644, 208, to_color(MUTED), self.body_font)
+
+        self.draw_button(painter, make_button(self.watch_buttons["new"], "New Random Game", WARN))
+        self.draw_button(painter, make_button(self.watch_buttons["back"], "Back To Menu", BAD))
+        self.draw_game_metrics(painter, self.watch_raw.game, 644, 322, done=self.watch_done)
+
+    def current_drag_anchor(self):
+        if (not self.drag_active) or self.drag_slot is None:
+            return None
+
+        block = self.vs_h_raw.game.hand[self.drag_slot]
+        cell = point_to_cell(self.mouse_pos, DUAL_BOARD_X_LEFT, DUAL_BOARD_Y, DUAL_CELL)
+        if cell is None:
+            return None
+
+        row, col = cell
+        anchor_row = row - self.drag_offset_cell[0]
+        anchor_col = col - self.drag_offset_cell[1]
+        valid = self.vs_h_raw.game.can_place(block, anchor_row, anchor_col)
+        return (anchor_row, anchor_col, valid)
+
+    def draw_drag_piece(self, painter):
+        if (not self.drag_active) or self.drag_slot is None:
+            return
+
+        block = self.vs_h_raw.game.hand[self.drag_slot]
+        anchor_preview = self.current_drag_anchor()
+        valid = anchor_preview is not None and anchor_preview[2]
+
+        if anchor_preview is not None:
+            anchor_row, anchor_col, _ = anchor_preview
+            top_left_x = int(DUAL_BOARD_X_LEFT + anchor_col * DUAL_CELL)
+            top_left_y = int(DUAL_BOARD_Y + anchor_row * DUAL_CELL)
+        else:
+            top_left_x = int(self.drag_visual_pos[0] - (self.drag_offset_cell[1] * DUAL_CELL))
+            top_left_y = int(self.drag_visual_pos[1] - (self.drag_offset_cell[0] * DUAL_CELL))
+
+        fill = to_color(GHOST_VALID if valid else GHOST_INVALID, 160)
+        for r in range(block.shape[0]):
+            for c in range(block.shape[1]):
+                if block[r, c] != 1:
+                    continue
+                rect = QRect(
+                    top_left_x + c * DUAL_CELL + 1,
+                    top_left_y + r * DUAL_CELL + 1,
+                    DUAL_CELL - 3,
+                    DUAL_CELL - 3,
+                )
+                self.draw_rounded_block(painter, rect, fill, radius=8)
+
+    def draw_versus_scene(self, painter):
+        side_panel = QRect(1204, 130, 396, 692)
+        self.draw_rounded_block(
+            painter,
+            side_panel,
+            to_color(PANEL),
+            radius=24,
+            border=to_color((78, 96, 128)),
+            border_width=1,
+        )
+
+        ghost_cells = None
+        ghost_valid = False
+        anchor = self.current_drag_anchor()
+        if anchor is not None and self.drag_slot is not None:
+            ar, ac, ghost_valid = anchor
+            block = self.vs_h_raw.game.hand[self.drag_slot]
+            ghost_cells = compute_block_cells(block, ar, ac)
+
+        self.draw_board(
+            painter,
+            self.vs_h_raw.game.grid,
+            DUAL_BOARD_X_LEFT,
+            DUAL_BOARD_Y,
+            DUAL_CELL,
+            "Your Board",
+            HUMAN,
+            ghost_cells=ghost_cells,
+            ghost_valid=ghost_valid,
+        )
+
+        self.draw_board(
+            painter,
+            self.vs_a_raw.game.grid,
+            DUAL_BOARD_X_RIGHT,
+            DUAL_BOARD_Y,
+            DUAL_CELL,
+            "AI Board",
+            AI,
+        )
+
+        human_slots = get_hand_slot_rects(DUAL_BOARD_X_LEFT, DUAL_BOARD_Y + DUAL_BOARD_SIZE + 50)
+        ai_slots = get_hand_slot_rects(DUAL_BOARD_X_RIGHT, DUAL_BOARD_Y + DUAL_BOARD_SIZE + 50)
+
+        self.draw_hand(
+            painter,
+            self.vs_h_raw.game.hand,
+            self.vs_h_raw.game.available,
+            human_slots,
+            "Your Hand (drag and drop)",
+            HUMAN,
+            selected_slot=self.drag_slot if self.drag_active else None,
+        )
+        self.draw_hand(
+            painter,
+            self.vs_a_raw.game.hand,
+            self.vs_a_raw.game.available,
+            ai_slots,
+            "AI Hand",
+            AI,
+        )
+
+        self.draw_label(painter, "You vs the AI", 1222, 168, to_color(TEXT), self.title_font)
+        self.draw_label(painter, self.vs_status, 1222, 208, to_color(MUTED), self.body_font)
+
+        self.draw_button(painter, make_button(self.vs_buttons["new"], "New Match", WARN))
+        self.draw_button(painter, make_button(self.vs_buttons["back"], "Back To Menu", BAD))
+
+        self.draw_label(painter, "You", 1222, 340, to_color(HUMAN), self.subtitle_font)
+        self.draw_metric_card(painter, QRect(1222, 356, 176, 68), "Stages", str(self.vs_h_raw.game.stages_passed), HUMAN)
+        self.draw_metric_card(painter, QRect(1408, 356, 176, 68), "Lines", str(self.vs_h_raw.game.lines_destroyed), HUMAN)
+        self.draw_metric_card(painter, QRect(1222, 432, 176, 68), "Blocks", str(self.vs_h_raw.game.blocks_placed), HUMAN)
+
+        self.draw_label(painter, "AI", 1222, 544, to_color(AI), self.subtitle_font)
+        self.draw_metric_card(painter, QRect(1222, 560, 176, 68), "Stages", str(self.vs_a_raw.game.stages_passed), AI)
+        self.draw_metric_card(painter, QRect(1408, 560, 176, 68), "Lines", str(self.vs_a_raw.game.lines_destroyed), AI)
+        self.draw_metric_card(painter, QRect(1222, 636, 176, 68), "Blocks", str(self.vs_a_raw.game.blocks_placed), AI)
+
+        if self.vs_winner is not None:
+            self.draw_label(painter, f"Result: {self.vs_winner}", 1222, 736, to_color(GOOD), self.subtitle_font)
+
+        self.draw_drag_piece(painter)
 
 
 def main():
     args = parse_args()
+    args = resolve_watch_defaults(args)
+    configure_board_mode(args.board_size)
 
-    pygame.init()
-    pygame.display.set_caption("Block Blast Arena")
-    screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-    clock = pygame.time.Clock()
+    model = None
+    if not args.no_model:
+        bootstrap_raw, bootstrap_env, _ = create_env_bundle(args)
+        try:
+            model = load_model(bootstrap_env, args.model_path)
+        except FileNotFoundError:
+            print(f"Model not found: {args.model_path}.zip")
+            raise SystemExit(1)
+        except RuntimeError as exc:
+            print(str(exc))
+            raise SystemExit(1)
 
-    title_font = pygame.font.SysFont("DejaVu Sans", 30, bold=True)
-    big_font = pygame.font.SysFont("DejaVu Sans", 22, bold=True)
-    small_font = pygame.font.SysFont("DejaVu Sans", 18, bold=True)
-    tiny_font = pygame.font.SysFont("DejaVu Sans", 15, bold=False)
-    button_font = pygame.font.SysFont("DejaVu Sans", 16, bold=True)
+        del bootstrap_raw
 
-    raw_env = BlockBlastEnv()
-    env = ActionMasker(raw_env, mask_fn)
-
-    try:
-        model = load_model(env, args.model_path)
-    except FileNotFoundError:
-        print(f"Model not found: {args.model_path}.zip")
-        pygame.quit()
-        raise SystemExit(1)
-
-    runtime_state = initialize_runtime(env, raw_env)
-    buttons = build_buttons()
-    hand_slot_rects = get_hand_slot_rects()
-
-    edit_mode = False
-    edit_grid = raw_env.game.grid.copy()
-    edit_hand_keys = [shape_key_from_matrix(block) for block in raw_env.game.hand]
-    selected_slot = 0
-
-    running = True
-    while running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-
-            elif event.type == pygame.KEYDOWN:
-                if event.key in (pygame.K_1, pygame.K_2, pygame.K_3):
-                    selected_slot = event.key - pygame.K_1
-                elif event.key == pygame.K_e:
-                    edit_mode = not edit_mode
-                    runtime_state["edit_mode"] = edit_mode
-                    runtime_state["auto_enabled"] = False
-                    runtime_state["mode"] = "human"
-                elif event.key == pygame.K_a and runtime_state["mode"] == "ai":
-                    runtime_state["auto_enabled"] = not runtime_state["auto_enabled"]
-                elif event.key == pygame.K_SPACE and runtime_state["mode"] == "ai":
-                    runtime_state["step_requested"] = True
-                elif edit_mode and event.key == pygame.K_LEFT:
-                    cycle_piece_key(edit_hand_keys, selected_slot, -1)
-                elif edit_mode and event.key == pygame.K_RIGHT:
-                    cycle_piece_key(edit_hand_keys, selected_slot, 1)
-
-            elif event.type == pygame.MOUSEMOTION:
-                mouse_x, mouse_y = event.pos
-                if BOARD_X <= mouse_x < BOARD_X + BOARD_SIZE and BOARD_Y <= mouse_y < BOARD_Y + BOARD_SIZE:
-                    runtime_state["hover_cell"] = ((mouse_y - BOARD_Y) // CELL_SIZE, (mouse_x - BOARD_X) // CELL_SIZE)
-                else:
-                    runtime_state["hover_cell"] = None
-
-            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                mouse_pos = event.pos
-                clicked_key = None
-
-                for key, (rect, _) in buttons.items():
-                    if rect.collidepoint(mouse_pos):
-                        clicked_key = key
-                        break
-
-                if clicked_key == "human":
-                    runtime_state["mode"] = "human"
-                    runtime_state["auto_enabled"] = False
-                    edit_mode = False
-
-                elif clicked_key == "ai_replay":
-                    if runtime_state["challenge_snapshot"] is not None:
-                        apply_snapshot(raw_env, runtime_state, runtime_state["challenge_snapshot"])
-                        runtime_state["mode"] = "ai"
-                        runtime_state["auto_enabled"] = False
-                        edit_mode = False
-
-                elif clicked_key == "auto" and runtime_state["mode"] == "ai":
-                    runtime_state["auto_enabled"] = not runtime_state["auto_enabled"]
-
-                elif clicked_key == "step" and runtime_state["mode"] == "ai":
-                    runtime_state["step_requested"] = True
-
-                elif clicked_key == "new":
-                    reset_round(env, raw_env, runtime_state, mode="human")
-                    edit_mode = False
-                    edit_grid = raw_env.game.grid.copy()
-                    edit_hand_keys = [shape_key_from_matrix(block) for block in raw_env.game.hand]
-                    selected_slot = 0
-
-                elif clicked_key == "undo":
-                    runtime_state["auto_enabled"] = False
-                    if runtime_state["history_index"] > 0:
-                        runtime_state["history_index"] -= 1
-                        apply_snapshot(raw_env, runtime_state, runtime_state["history"][runtime_state["history_index"]])
-
-                elif clicked_key == "redo":
-                    runtime_state["auto_enabled"] = False
-                    if runtime_state["history_index"] < len(runtime_state["history"]) - 1:
-                        runtime_state["history_index"] += 1
-                        apply_snapshot(raw_env, runtime_state, runtime_state["history"][runtime_state["history_index"]])
-
-                elif clicked_key == "edit":
-                    edit_mode = not edit_mode
-                    runtime_state["edit_mode"] = edit_mode
-                    runtime_state["auto_enabled"] = False
-                    runtime_state["mode"] = "human"
-                    if edit_mode:
-                        edit_grid = raw_env.game.grid.copy()
-                        edit_hand_keys = [shape_key_from_matrix(block) for block in raw_env.game.hand]
-
-                elif clicked_key == "apply":
-                    apply_editor_setup(raw_env, runtime_state, edit_grid, edit_hand_keys)
-                    edit_mode = False
-                    runtime_state["edit_mode"] = False
-
-                elif clicked_key == "same_seed":
-                    if runtime_state["challenge_snapshot"] is not None:
-                        apply_snapshot(raw_env, runtime_state, runtime_state["challenge_snapshot"])
-                        runtime_state["mode"] = "human"
-                        runtime_state["auto_enabled"] = False
-                        edit_mode = False
-
-                else:
-                    if edit_mode:
-                        for idx, slot_rect in enumerate(hand_slot_rects):
-                            if slot_rect.collidepoint(mouse_pos):
-                                selected_slot = idx
-
-                        board_x, board_y = mouse_pos
-                        if BOARD_X <= board_x < BOARD_X + BOARD_SIZE and BOARD_Y <= board_y < BOARD_Y + BOARD_SIZE:
-                            col = (board_x - BOARD_X) // CELL_SIZE
-                            row = (board_y - BOARD_Y) // CELL_SIZE
-                            edit_grid[row, col] = 0 if edit_grid[row, col] == 1 else 1
-                    else:
-                        for idx, slot_rect in enumerate(hand_slot_rects):
-                            if slot_rect.collidepoint(mouse_pos):
-                                selected_slot = idx
-                                runtime_state["selected_slot"] = selected_slot
-
-                        if runtime_state["mode"] == "human" and not runtime_state["done"]:
-                            board_x, board_y = mouse_pos
-                            if BOARD_X <= board_x < BOARD_X + BOARD_SIZE and BOARD_Y <= board_y < BOARD_Y + BOARD_SIZE:
-                                col = (board_x - BOARD_X) // CELL_SIZE
-                                row = (board_y - BOARD_Y) // CELL_SIZE
-                                apply_human_move(env, raw_env, runtime_state, selected_slot, (row, col))
-
-        draw_gradient_background(screen)
-
-        selected_block = draw_board(
-            screen,
-            (title_font, small_font),
-            raw_env,
-            runtime_state,
-            selected_slot,
-            hand_slot_rects,
-            edit_mode,
-            edit_grid,
-            edit_hand_keys,
-        )
-
-        draw_hand(screen, (big_font, tiny_font), raw_env, runtime_state, selected_slot, hand_slot_rects, edit_mode, edit_hand_keys)
-        draw_sidebar(screen, (title_font, big_font, small_font, tiny_font), raw_env, runtime_state, buttons)
-
-        if runtime_state["done"]:
-            finalize_if_needed(raw_env, runtime_state)
-
-        if runtime_state["anim_frames"] > 0:
-            runtime_state["anim_frames"] -= 1
-            if runtime_state["anim_frames"] == 0:
-                runtime_state["last_placed_cells"] = [
-                    cell
-                    for cell in runtime_state["last_placed_cells"]
-                    if cell[0] not in runtime_state["anim_rows"] and cell[1] not in runtime_state["anim_cols"]
-                ]
-            pygame.display.flip()
-            clock.tick(30)
-            continue
-
-        if runtime_state["mode"] == "ai" and not runtime_state["done"]:
-            if runtime_state["auto_enabled"] and (time.time() - runtime_state["last_auto_move"] > args.auto_interval):
-                apply_ai_move(model, env, raw_env, runtime_state)
-            elif runtime_state["step_requested"]:
-                apply_ai_move(model, env, raw_env, runtime_state)
-                runtime_state["step_requested"] = False
-
-        pygame.display.flip()
-        clock.tick(30)
-
-    pygame.quit()
+    app = QApplication(sys.argv)
+    widget = ArenaWidget(model, args)
+    widget.show()
+    raise SystemExit(app.exec())
 
 
 if __name__ == "__main__":
