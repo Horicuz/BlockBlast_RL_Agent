@@ -16,10 +16,19 @@ venv/
 # Local dev artifacts
 tensorboard_logs/
 tensorboard_sweeps/
-checkpoints/
+checkpoints/*
+!checkpoints/README.md
+!checkpoints/4x4_best8x8/
+checkpoints/4x4_best8x8/*
+!checkpoints/4x4_best8x8/4x4_best8x8_basecnn_g03_lr2e3/
+checkpoints/4x4_best8x8/4x4_best8x8_basecnn_g03_lr2e3/*
+!checkpoints/4x4_best8x8/4x4_best8x8_basecnn_g03_lr2e3/block_blast_4x4_best8x8_basecnn_v1.zip
+!checkpoints/cnn_contact_threshold/
+checkpoints/cnn_contact_threshold/*
+!checkpoints/cnn_contact_threshold/basecnn_contact_threshold_gamma06_lr8e4_lines28/
+checkpoints/cnn_contact_threshold/basecnn_contact_threshold_gamma06_lr8e4_lines28/*
+!checkpoints/cnn_contact_threshold/basecnn_contact_threshold_gamma06_lr8e4_lines28/block_blast_basecnn_contact_threshold_gamma06_v1.zip
 datasets/
 run_logs/
 sweep_results/
 .codex
-SUSTINERE_PROIECT.md
-29042026_333AA_Potop_Horia_Ioan.txt

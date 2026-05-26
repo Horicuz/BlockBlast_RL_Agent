@@ -10,7 +10,7 @@ import torch.nn as nn
 from blocks import TRAINING_POOLS
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
-BOARD_SIZE = 4
+BOARD_SIZE = 8
 HAND_SIZE = 3
 HAND_PAD_SIZE = 3
 ACTIONS_PER_HAND = BOARD_SIZE * BOARD_SIZE

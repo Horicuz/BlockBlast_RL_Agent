@@ -1,0 +1,3931 @@
+Fisier: blocks.py
+Descriere: Defineste biblioteca de piese si categoriile folosite de generator.
+---------
+import numpy as np
+
+SHAPES = {
+    # 2 cells: diagonals and short lines.
+    "diag_2_1": np.array([[1, 0], 
+                          [0, 1]], dtype=int),
+    "diag_2_2": np.array([[0, 1], 
+                          [1, 0]], dtype=int),
+    "line_1x2": np.array([[1, 1]], dtype=int),
+    "line_2x1": np.array([[1], 
+                          [1]], dtype=int),
+
+    # 3 cells: lines and small corners.
+    "line_1x3": np.array([[1, 1, 1]], dtype=int),
+    "line_3x1": np.array([[1], 
+                          [1], 
+                          [1]], dtype=int),
+    "corner_3_ul": np.array([[1, 1], 
+                             [1, 0]], dtype=int),
+    "corner_3_ur": np.array([[1, 1], 
+                             [0, 1]], dtype=int),
+    "corner_3_dl": np.array([[1, 0], 
+                             [1, 1]], dtype=int),
+    "corner_3_dr": np.array([[0, 1], 
+                             [1, 1]], dtype=int),
+
+    # 4 cells: square, T, S/Z and L/J shapes.
+    "square_2x2": np.array([[1, 1], 
+                            [1, 1]], dtype=int),
+    "T_4_up": np.array([[0, 1, 0], 
+                        [1, 1, 1]], dtype=int),
+    "T_4_down": np.array([[1, 1, 1], 
+                          [0, 1, 0]], dtype=int),
+    "T_4_left": np.array([[0, 1], 
+                          [1, 1], 
+                          [0, 1]], dtype=int),
+    "T_4_right": np.array([[1, 0], 
+                           [1, 1], 
+                           [1, 0]], dtype=int),
+    "S_4_h": np.array([[0, 1, 1], 
+                       [1, 1, 0]], dtype=int),
+    "S_4_v": np.array([[1, 0], 
+                       [1, 1], 
+                       [0, 1]], dtype=int),
+    "Z_4_h": np.array([[1, 1, 0], 
+                       [0, 1, 1]], dtype=int),
+    "Z_4_v": np.array([[0, 1], 
+                       [1, 1], 
+                       [1, 0]], dtype=int),
+    "L_4_1": np.array([[1, 0], 
+                       [1, 0], 
+                       [1, 1]], dtype=int),
+    "L_4_2": np.array([[1, 1, 1], 
+                       [1, 0, 0]], dtype=int),
+    "L_4_3": np.array([[1, 1], 
+                       [0, 1], 
+                       [0, 1]], dtype=int),
+    "L_4_4": np.array([[0, 0, 1], 
+                       [1, 1, 1]], dtype=int),
+    "J_4_1": np.array([[0, 1], 
+                       [0, 1], 
+                       [1, 1]], dtype=int),
+    "J_4_2": np.array([[1, 0, 0], 
+                       [1, 1, 1]], dtype=int),
+    "J_4_3": np.array([[1, 1], 
+                       [1, 0], 
+                       [1, 0]], dtype=int),
+    "J_4_4": np.array([[1, 1, 1], 
+                       [0, 0, 1]], dtype=int),
+
+    # 5 cells: large L and T variants.
+    "big_L_ul": np.array([[1, 1, 1], 
+                          [1, 0, 0], 
+                          [1, 0, 0]], dtype=int),
+    "big_L_ur": np.array([[1, 1, 1], 
+                          [0, 0, 1], 
+                          [0, 0, 1]], dtype=int),
+    "big_L_dl": np.array([[1, 0, 0], 
+                          [1, 0, 0], 
+                          [1, 1, 1]], dtype=int),
+    "big_L_dr": np.array([[0, 0, 1], 
+                          [0, 0, 1], 
+                          [1, 1, 1]], dtype=int),
+    "big_T_up": np.array([[1, 1, 1], 
+                          [0, 1, 0], 
+                          [0, 1, 0]], dtype=int),
+    "big_T_down": np.array([[0, 1, 0], 
+                            [0, 1, 0], 
+                            [1, 1, 1]], dtype=int),
+    "big_T_left": np.array([[1, 0, 0], 
+                            [1, 1, 1], 
+                            [1, 0, 0]], dtype=int),
+    "big_T_right": np.array([[0, 0, 1], 
+                             [1, 1, 1], 
+                             [0, 0, 1]], dtype=int),
+
+    # 6 and 9 cells: rectangles and 3x3 square.
+    "rect_2x3": np.array([[1, 1, 1], 
+                          [1, 1, 1]], dtype=int),
+    "rect_3x2": np.array([[1, 1], 
+                          [1, 1], 
+                          [1, 1]], dtype=int),
+    "square_3x3": np.array([[1, 1, 1], 
+                            [1, 1, 1], 
+                            [1, 1, 1]], dtype=int)
+}
+
+SIZE_CATEGORIES = {
+    "small": [
+        "dot",
+        "diag_2_1", "diag_2_2",
+        "line_1x2", "line_2x1",
+        "line_1x3", "line_3x1",
+        "corner_3_ul", "corner_3_ur", "corner_3_dl", "corner_3_dr"
+    ],
+    "medium": [
+        "square_2x2",
+        "T_4_up", "T_4_down", "T_4_left", "T_4_right", 
+        "S_4_h", "S_4_v", "Z_4_h", "Z_4_v",
+        "L_4_1", "L_4_2", "L_4_3", "L_4_4", "J_4_1", "J_4_2", "J_4_3", "J_4_4"
+    ],
+    "large": [
+        "big_L_ul", "big_L_ur", "big_L_dl", "big_L_dr", 
+        "big_T_up", "big_T_down", "big_T_left", "big_T_right", 
+        "rect_2x3", "rect_3x2",
+        "square_3x3"
+    ]
+}
+
+COMPLEXITY_CATEGORIES = {
+    "simple": [
+        "dot", "line_1x2", "line_2x1", "line_1x3", "line_3x1", 
+        "square_2x2", "square_3x3", "rect_2x3", "rect_3x2"
+    ],
+    "medium": [
+        "corner_3_ul", "corner_3_ur", "corner_3_dl", "corner_3_dr", 
+        "L_4_1", "L_4_2", "L_4_3", "L_4_4", "J_4_1", "J_4_2", "J_4_3", "J_4_4",
+        "big_L_ul", "big_L_ur", "big_L_dl", "big_L_dr"
+    ],
+    "hard": [
+        "diag_2_1", "diag_2_2",
+        "T_4_up", "T_4_down", "T_4_left", "T_4_right", 
+        "S_4_h", "S_4_v", "Z_4_h", "Z_4_v", 
+        "big_T_up", "big_T_down", "big_T_left", "big_T_right"
+    ]
+}
+
+TRAINING_POOLS = {
+    "all": list(SHAPES.keys()),
+    "simple": COMPLEXITY_CATEGORIES["simple"],
+    "simple_small": [
+        "line_1x2", "line_2x1", "line_1x3", "line_3x1",
+        "square_2x2",
+    ],
+    "small": SIZE_CATEGORIES["small"],
+    "medium_size": SIZE_CATEGORIES["medium"],
+    "large": SIZE_CATEGORIES["large"],
+    "medium_complexity": COMPLEXITY_CATEGORIES["medium"],
+    "hard": COMPLEXITY_CATEGORIES["hard"],
+}
+
+SIZE_BY_SHAPE = {}
+for _size_name, _shape_keys in SIZE_CATEGORIES.items():
+    for _shape_key in _shape_keys:
+        SIZE_BY_SHAPE[_shape_key] = _size_name
+
+COMPLEXITY_BY_SHAPE = {}
+for _complexity_name, _shape_keys in COMPLEXITY_CATEGORIES.items():
+    for _shape_key in _shape_keys:
+        COMPLEXITY_BY_SHAPE[_shape_key] = _complexity_name
+
+for _shape_key in SHAPES:
+    SIZE_BY_SHAPE.setdefault(_shape_key, "medium")
+    COMPLEXITY_BY_SHAPE.setdefault(_shape_key, "medium")
+
+
+MINI_SHAPES = {
+    "dot": np.array([[1]], dtype=int),
+    "line_1x2": np.array([[1, 1]], dtype=int),
+    "line_2x1": np.array([[1], [1]], dtype=int),
+    "line_1x3": np.array([[1, 1, 1]], dtype=int),
+    "line_3x1": np.array([[1], [1], [1]], dtype=int),
+    "diag_ul": np.array([[1, 0], [0, 1]], dtype=int),
+    "diag_ur": np.array([[0, 1], [1, 0]], dtype=int),
+    "corner_ul": np.array([[1, 1], [1, 0]], dtype=int),
+    "corner_ur": np.array([[1, 1], [0, 1]], dtype=int),
+    "corner_dl": np.array([[1, 0], [1, 1]], dtype=int),
+    "corner_dr": np.array([[0, 1], [1, 1]], dtype=int),
+    "square_2x2": np.array([[1, 1], [1, 1]], dtype=int),
+    "square_3x3": np.array([[1, 1, 1], [1, 1, 1], [1, 1, 1]], dtype=int),
+    "L_4_1": np.array([[1, 0], [1, 0], [1, 1]], dtype=int),
+    "L_4_2": np.array([[1, 1, 1], [1, 0, 0]], dtype=int),
+    "L_4_3": np.array([[1, 1], [0, 1], [0, 1]], dtype=int),
+    "L_4_4": np.array([[0, 0, 1], [1, 1, 1]], dtype=int),
+    "J_4_1": np.array([[0, 1], [0, 1], [1, 1]], dtype=int),
+    "J_4_2": np.array([[1, 0, 0], [1, 1, 1]], dtype=int),
+    "J_4_3": np.array([[1, 1], [1, 0], [1, 0]], dtype=int),
+    "J_4_4": np.array([[1, 1, 1], [0, 0, 1]], dtype=int),
+}
+
+for _shape_key in MINI_SHAPES:
+    _cell_count = int(np.count_nonzero(MINI_SHAPES[_shape_key]))
+    if _cell_count <= 3:
+        SIZE_BY_SHAPE[_shape_key] = "small"
+    elif _cell_count == 4:
+        SIZE_BY_SHAPE[_shape_key] = "medium"
+    else:
+        SIZE_BY_SHAPE[_shape_key] = "large"
+
+    if _shape_key in {"diag_ul", "diag_ur"}:
+        COMPLEXITY_BY_SHAPE[_shape_key] = "hard"
+    elif _shape_key in {
+        "corner_ul", "corner_ur", "corner_dl", "corner_dr",
+        "L_4_1", "L_4_2", "L_4_3", "L_4_4", "J_4_1", "J_4_2", "J_4_3", "J_4_4",
+    }:
+        COMPLEXITY_BY_SHAPE[_shape_key] = "medium"
+    else:
+        COMPLEXITY_BY_SHAPE[_shape_key] = "simple"
+
+TRAINING_POOLS["mini_small"] = [
+    "dot", "line_1x2", "line_2x1", "line_1x3", "line_3x1",
+    "diag_ul", "diag_ur", "corner_ul", "corner_ur", "corner_dl", "corner_dr",
+]
+TRAINING_POOLS["mini_large"] = [
+    "square_2x2", "square_3x3",
+    "L_4_1", "L_4_2", "L_4_3", "L_4_4", "J_4_1", "J_4_2", "J_4_3", "J_4_4",
+]
+TRAINING_POOLS["mini"] = list(MINI_SHAPES.keys())
+
+SHAPE_LIBRARY = {**SHAPES, **MINI_SHAPES}
+
+---------
+Fisier: engine.py
+Descriere: Contine motorul determinist al jocului: tabla, plasari, linii si generare de maini.
+---------
+import numpy as np
+import random
+from blocks import COMPLEXITY_BY_SHAPE, SHAPE_LIBRARY, SIZE_BY_SHAPE
+
+BOARD_SIZE = 4
+BOARD_CELLS = BOARD_SIZE * BOARD_SIZE
+
+class BlockBlastLogic:
+    def __init__(
+        self,
+        rng=None,
+        shape_keys=None,
+        hand_generator="solvable",
+        max_hand_attempts=50,
+        complexity_weights=None,
+        board_size=BOARD_SIZE,
+    ):
+        self.rng = rng or random.Random()
+        self.shape_keys = list(shape_keys or SHAPE_LIBRARY.keys())
+        self.hand_generator = hand_generator
+        self.max_hand_attempts = max_hand_attempts
+        self.board_size = int(board_size)
+        self.board_cells = self.board_size * self.board_size
+        self.complexity_weights = self._normalize_complexity_weights(complexity_weights)
+        self.grid = np.zeros((self.board_size, self.board_size), dtype=int)
+        self.stages_passed = 0
+        self.lines_destroyed = 0
+        self.blocks_placed = 0 
+        
+        self.hand = []
+        self.available = []
+        if not self.get_new_hand():
+            raise RuntimeError("Nu s-a putut genera o mana initiala solvabila.")
+
+    @staticmethod
+    def _normalize_complexity_weights(weights):
+        default_weights = {
+            "simple": 0.78,
+            "medium": 0.18,
+            "hard": 0.04,
+        }
+        if not weights:
+            return default_weights
+
+        merged = default_weights.copy()
+        for key in default_weights:
+            value = float(weights.get(key, merged[key]))
+            merged[key] = max(value, 0.0)
+
+        total = sum(merged.values())
+        if total <= 1e-9:
+            return default_weights
+
+        return {key: value / total for key, value in merged.items()}
+
+    def _shuffled_keys(self):
+        keys = list(self.shape_keys)
+        self.rng.shuffle(keys)
+        return keys
+
+    def _can_place_on_grid(self, grid, block, row, col):
+        block_h, block_w = block.shape
+        if row + block_h > self.board_size or col + block_w > self.board_size:
+            return False
+        target_area = grid[row:row+block_h, col:col+block_w]
+        return not np.any(np.logical_and(target_area, block))
+
+    def _get_legal_moves_on_grid(self, grid, block):
+        block_h, block_w = block.shape
+        legal_moves = []
+        for row in range(self.board_size - block_h + 1):
+            for col in range(self.board_size - block_w + 1):
+                if self._can_place_on_grid(grid, block, row, col):
+                    legal_moves.append((row, col))
+        return legal_moves
+
+    @staticmethod
+    def _apply_move_on_grid(grid, block, row, col):
+        next_grid = grid.copy()
+        block_h, block_w = block.shape
+        next_grid[row:row+block_h, col:col+block_w] += block
+
+        full_rows = list(np.where(np.all(next_grid == 1, axis=1))[0])
+        full_cols = list(np.where(np.all(next_grid == 1, axis=0))[0])
+        if full_rows:
+            next_grid[full_rows, :] = 0
+        if full_cols:
+            next_grid[:, full_cols] = 0
+
+        return next_grid
+
+    def _find_solvable_hand_sequence(self, grid, depth):
+        if depth == 0:
+            return []
+
+        for key in self._shuffled_keys():
+            block = SHAPE_LIBRARY[key]
+            legal_moves = self._get_legal_moves_on_grid(grid, block)
+            if not legal_moves:
+                continue
+
+            self.rng.shuffle(legal_moves)
+            for row, col in legal_moves:
+                next_grid = self._apply_move_on_grid(grid, block, row, col)
+                suffix = self._find_solvable_hand_sequence(next_grid, depth - 1)
+                if suffix is not None:
+                    return [key] + suffix
+
+        return None
+
+    def _random_hand_keys(self):
+        return [self.rng.choice(self.shape_keys) for _ in range(3)]
+
+    def _sample_random_shape_key(self, candidate_keys=None):
+        return self.rng.choice(list(candidate_keys or self.shape_keys))
+
+    def _difficulty_progress(self):
+        stage_progress = min(self.stages_passed / 35.0, 1.0)
+        placement_progress = min(self.blocks_placed / 105.0, 1.0)
+        return max(stage_progress, placement_progress)
+
+    def _shape_size_weights(self):
+        free_ratio = float(np.count_nonzero(self.grid == 0)) / float(self.board_cells)
+        progress = self._difficulty_progress()
+
+        if free_ratio >= 0.82:
+            return {
+                "small": 0.22 - (0.07 * progress),
+                "medium": 0.33 + (0.03 * progress),
+                "large": 0.45 + (0.04 * progress),
+            }
+        if free_ratio >= 0.68:
+            return {
+                "small": 0.30 - (0.08 * progress),
+                "medium": 0.42 + (0.04 * progress),
+                "large": 0.28 + (0.04 * progress),
+            }
+        if free_ratio >= 0.52:
+            return {
+                "small": 0.46 - (0.12 * progress),
+                "medium": 0.44 + (0.08 * progress),
+                "large": 0.10 + (0.04 * progress),
+            }
+        if free_ratio >= 0.38:
+            return {
+                "small": 0.68 - (0.16 * progress),
+                "medium": 0.31 + (0.155 * progress),
+                "large": 0.01 + (0.005 * progress),
+            }
+        if free_ratio >= 0.25:
+            return {
+                "small": 0.84 - (0.12 * progress),
+                "medium": 0.159 + (0.119 * progress),
+                "large": 0.001,
+            }
+        return {"small": 0.94, "medium": 0.06, "large": 0.0}
+
+    def _shape_preference_weight(self, key):
+        progress = self._difficulty_progress()
+        if key.startswith("line_"):
+            return 2.55 - (0.35 * progress)
+        if key == "square_2x2":
+            return 2.15
+        if key.startswith("rect_"):
+            return 1.90 + (0.20 * progress)
+        if key == "square_3x3":
+            return 0.42 + (0.45 * progress)
+        if key.startswith("corner_3"):
+            return 1.15
+        if key.startswith(("L_4", "J_4")):
+            return 1.00 + (0.35 * progress)
+        if key.startswith("big_L"):
+            return 0.52 + (0.30 * progress)
+        if key.startswith(("T_4", "big_T")):
+            return 0.62 + (0.75 * progress)
+        if key.startswith(("S_4", "Z_4")):
+            return 0.56 + (0.68 * progress)
+        if key.startswith("diag_"):
+            return 0.10 + (0.06 * progress)
+        return 1.0
+
+    def _board_density_shape_multiplier(self, key, free_ratio):
+        progress = self._difficulty_progress()
+        cell_count = int(np.count_nonzero(SHAPE_LIBRARY[key]))
+        footprint_cells = int(SHAPE_LIBRARY[key].shape[0] * SHAPE_LIBRARY[key].shape[1])
+
+        if cell_count > 4:
+            if free_ratio < 0.25:
+                return 0.0
+            if free_ratio < 0.38:
+                return 0.01
+            if free_ratio < 0.52:
+                return 0.08 + (0.04 * progress)
+            if free_ratio < 0.68:
+                return 0.45 + (0.10 * progress)
+            return 1.0 + (0.15 * progress)
+
+        if footprint_cells >= 9 and free_ratio < 0.45:
+            return 0.35
+
+        return 1.0
+
+    def _complexity_progress_multiplier(self, shape_complexity):
+        progress = self._difficulty_progress()
+        if shape_complexity == "simple":
+            return 1.0 - (0.24 * progress)
+        if shape_complexity == "medium":
+            return 1.0 + (0.95 * progress)
+        if shape_complexity == "hard":
+            return 1.0 + (3.40 * progress)
+        return 1.0
+
+    def _adaptive_shape_weights(self, candidate_keys=None):
+        free_ratio = float(np.count_nonzero(self.grid == 0)) / float(self.board_cells)
+        size_weights = self._shape_size_weights()
+        keys = list(candidate_keys or self.shape_keys)
+        weights = {}
+
+        for key in keys:
+            shape_size = SIZE_BY_SHAPE.get(key, "medium")
+            shape_complexity = COMPLEXITY_BY_SHAPE.get(key, "medium")
+            weight = (
+                size_weights.get(shape_size, 0.0)
+                * self.complexity_weights.get(shape_complexity, 0.0)
+                * self._complexity_progress_multiplier(shape_complexity)
+                * self._shape_preference_weight(key)
+                * self._board_density_shape_multiplier(key, free_ratio)
+            )
+            weights[key] = max(weight, 0.0)
+
+        total = sum(weights.values())
+        if total <= 1e-9 and keys:
+            fallback = 1.0 / len(keys)
+            return {key: fallback for key in keys}
+
+        return weights
+
+    def _sample_weighted_shape_key(self, candidate_keys=None):
+        weights = self._adaptive_shape_weights(candidate_keys)
+        total = sum(weights.values())
+        if total <= 1e-9:
+            keys = list(candidate_keys or self.shape_keys)
+            return self.rng.choice(keys)
+
+        cumulative = 0.0
+        target = self.rng.random() * total
+        for key, weight in weights.items():
+            if weight <= 0:
+                continue
+            cumulative += weight
+            if cumulative >= target:
+                return key
+        return next(reversed(weights))
+
+    def _has_any_legal_move_for_keys(self, hand_keys):
+        for key in hand_keys:
+            if self._get_legal_moves_on_grid(self.grid, SHAPE_LIBRARY[key]):
+                return True
+        return False
+
+    def _get_hand_with_playable_piece(self, sample_key):
+        for _ in range(self.max_hand_attempts):
+            hand_keys = [sample_key() for _ in range(3)]
+            if self._has_any_legal_move_for_keys(hand_keys):
+                return hand_keys
+
+        fitting_keys = [
+            key for key in self.shape_keys
+            if self._get_legal_moves_on_grid(self.grid, SHAPE_LIBRARY[key])
+        ]
+        if not fitting_keys:
+            return None
+
+        hand_keys = [sample_key(fitting_keys)]
+        hand_keys.extend(sample_key() for _ in range(2))
+        self.rng.shuffle(hand_keys)
+        return hand_keys
+
+    def get_new_hand(self):
+        if self.hand_generator == "random":
+            hand_keys = self._random_hand_keys()
+        elif self.hand_generator == "playable":
+            hand_keys = self._get_hand_with_playable_piece(self._sample_random_shape_key)
+        elif self.hand_generator == "adaptive_playable":
+            hand_keys = self._get_hand_with_playable_piece(self._sample_weighted_shape_key)
+        elif self.hand_generator == "solvable":
+            hand_keys = self._find_solvable_hand_sequence(self.grid.copy(), depth=3)
+        else:
+            raise ValueError(f"Generator de mana necunoscut: {self.hand_generator}")
+
+        if hand_keys is None:
+            self.available = [False, False, False]
+            return False
+
+        if self.hand_generator == "solvable":
+            self.rng.shuffle(hand_keys)
+
+        self.hand = [SHAPE_LIBRARY[key] for key in hand_keys]
+        self.available = [True, True, True]
+        return True
+
+    def can_place(self, block, row, col):
+        return self._can_place_on_grid(self.grid, block, row, col)
+
+    def clear_lines(self):
+        full_rows = list(np.where(np.all(self.grid == 1, axis=1))[0])
+        full_cols = list(np.where(np.all(self.grid == 1, axis=0))[0])
+        
+        lines_cleared = len(full_rows) + len(full_cols)
+        
+        if lines_cleared > 0:
+            self.grid[full_rows, :] = 0
+            self.grid[:, full_cols] = 0
+            self.lines_destroyed += lines_cleared
+            
+        return lines_cleared, full_rows, full_cols
+
+    def step(self, hand_index, row, col):
+        if not self.available[hand_index]:
+            return False, False, 0, [], [], False
+            
+        block = self.hand[hand_index]
+        if not self.can_place(block, row, col):
+            return False, False, 0, [], [], False
+            
+        block_h, block_w = block.shape
+        self.grid[row:row+block_h, col:col+block_w] += block
+        self.available[hand_index] = False
+        self.blocks_placed += 1 
+        
+        lines_cleared, f_rows, f_cols = self.clear_lines()
+        stage_completed = False
+        
+        if not any(self.available):
+            if self.get_new_hand():
+                self.stages_passed += 1
+                stage_completed = True
+            
+        is_game_over = self.check_game_over()
+        
+        return True, is_game_over, lines_cleared, f_rows, f_cols, stage_completed
+
+    def check_game_over(self):
+        for i, is_avail in enumerate(self.available):
+            if is_avail:
+                block = self.hand[i]
+                for r in range(self.board_size):
+                    for c in range(self.board_size):
+                        if self.can_place(block, r, c):
+                            return False
+        return True
+
+---------
+Fisier: env.py
+Descriere: Expune jocul ca mediu Gymnasium si defineste reward-urile, action mask-ul si extractoarele CNN.
+---------
+import gymnasium as gym
+from gymnasium import spaces
+import numpy as np
+from collections import deque
+import random
+from engine import BlockBlastLogic
+
+import torch
+import torch.nn as nn
+from blocks import TRAINING_POOLS
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+
+BOARD_SIZE = 4
+HAND_SIZE = 3
+HAND_PAD_SIZE = 3
+ACTIONS_PER_HAND = BOARD_SIZE * BOARD_SIZE
+ACTION_SPACE_SIZE = HAND_SIZE * ACTIONS_PER_HAND
+
+
+class CustomCNNExtractor(BaseFeaturesExtractor):
+    def __init__(self, observation_space, features_dim=256):
+        super().__init__(observation_space, features_dim)
+        
+        board_shape = observation_space["board"].shape
+        legal_shape = observation_space["valid_actions"].shape
+        hand_shape = observation_space["hand"].shape
+        board_height, board_width = board_shape[1], board_shape[2]
+        
+        spatial_channels = board_shape[0] + legal_shape[0]
+        self.spatial_cnn = nn.Sequential(
+            nn.Conv2d(spatial_channels, 32, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.Flatten(),
+        )
+        
+        spatial_output_size = 64 * board_height * board_width
+        
+        hand_flat_size = int(np.prod(hand_shape))
+        self.hand_fc = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(hand_flat_size, 64),
+            nn.ReLU(),
+        )
+        
+        self.available_fc = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(3, 16),
+            nn.ReLU(),
+        )
+        
+        combined_size = spatial_output_size + 64 + 16
+        self.fc_combined = nn.Sequential(
+            nn.Linear(combined_size, features_dim),
+            nn.ReLU(),
+        )
+    
+    def forward(self, observations):
+        board = observations["board"].float()
+        valid_actions = observations["valid_actions"].float()
+        hand = observations["hand"].float()
+        available = observations["available"].float()
+        
+        spatial = torch.cat([board, valid_actions], dim=1)
+        spatial_features = self.spatial_cnn(spatial)
+        hand_features = self.hand_fc(hand)
+        available_features = self.available_fc(available)
+        combined = torch.cat([spatial_features, hand_features, available_features], dim=1)
+        return self.fc_combined(combined)
+
+class ResidualConvBlock(nn.Module):
+    def __init__(self, channels):
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Conv2d(channels, channels, kernel_size=3, stride=1, padding=1),
+            nn.GroupNorm(8, channels),
+            nn.ReLU(),
+            nn.Conv2d(channels, channels, kernel_size=3, stride=1, padding=1),
+            nn.GroupNorm(8, channels),
+        )
+        self.activation = nn.ReLU()
+
+    def forward(self, x):
+        return self.activation(x + self.block(x))
+
+class CustomCNNExtractorV2(BaseFeaturesExtractor):
+    def __init__(self, observation_space, features_dim=512):
+        super().__init__(observation_space, features_dim)
+
+        board_shape = observation_space["board"].shape
+        legal_shape = observation_space["valid_actions"].shape
+        hand_shape = observation_space["hand"].shape
+        board_height, board_width = board_shape[1], board_shape[2]
+
+        spatial_channels = board_shape[0] + legal_shape[0]
+        self.spatial_cnn = nn.Sequential(
+            nn.Conv2d(spatial_channels, 32, kernel_size=3, stride=1, padding=1),
+            nn.GroupNorm(8, 32),
+            nn.ReLU(),
+            ResidualConvBlock(32),
+            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.GroupNorm(8, 64),
+            nn.ReLU(),
+            ResidualConvBlock(64),
+            nn.Conv2d(64, 96, kernel_size=3, stride=1, padding=1),
+            nn.GroupNorm(8, 96),
+            nn.ReLU(),
+            ResidualConvBlock(96),
+            nn.Flatten(),
+        )
+
+        spatial_output_size = 96 * board_height * board_width
+        hand_flat_size = int(np.prod(hand_shape))
+        self.hand_fc = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(hand_flat_size, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+        )
+        self.available_fc = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(3, 32),
+            nn.ReLU(),
+            nn.Linear(32, 16),
+            nn.ReLU(),
+        )
+
+        combined_size = spatial_output_size + 64 + 16
+        self.fc_combined = nn.Sequential(
+            nn.Linear(combined_size, 512),
+            nn.ReLU(),
+            nn.LayerNorm(512),
+            nn.Linear(512, features_dim),
+            nn.ReLU(),
+        )
+
+    def forward(self, observations):
+        board = observations["board"].float()
+        valid_actions = observations["valid_actions"].float()
+        hand = observations["hand"].float()
+        available = observations["available"].float()
+
+        spatial = torch.cat([board, valid_actions], dim=1)
+        spatial_features = self.spatial_cnn(spatial)
+        hand_features = self.hand_fc(hand)
+        available_features = self.available_fc(available)
+        combined = torch.cat([spatial_features, hand_features, available_features], dim=1)
+        return self.fc_combined(combined)
+
+class ActionAwareCNNExtractor(BaseFeaturesExtractor):
+    def __init__(self, observation_space, features_dim=768):
+        super().__init__(observation_space, features_dim)
+
+        board_shape = observation_space["board"].shape
+        hand_shape = observation_space["hand"].shape
+        board_height, board_width = board_shape[1], board_shape[2]
+        self.board_height = board_height
+        self.board_width = board_width
+        hand_flat_size = int(np.prod(hand_shape[1:]))
+
+        coord_y = torch.linspace(-1.0, 1.0, board_height).view(1, 1, board_height, 1).expand(1, 1, board_height, board_width)
+        coord_x = torch.linspace(-1.0, 1.0, board_width).view(1, 1, 1, board_width).expand(1, 1, board_height, board_width)
+        self.register_buffer("coord_channels", torch.cat([coord_y, coord_x], dim=1), persistent=False)
+
+        self.slot_hand_encoder = nn.Sequential(
+            nn.Linear(hand_flat_size, 64),
+            nn.ReLU(),
+            nn.Linear(64, 24),
+            nn.ReLU(),
+        )
+
+        slot_channels = 1 + 1 + 1 + 2 + 24
+        self.slot_cnn = nn.Sequential(
+            nn.Conv2d(slot_channels, 64, kernel_size=3, stride=1, padding=1),
+            nn.GroupNorm(8, 64),
+            nn.ReLU(),
+            ResidualConvBlock(64),
+            nn.Conv2d(64, 96, kernel_size=3, stride=1, padding=1),
+            nn.GroupNorm(8, 96),
+            nn.ReLU(),
+            ResidualConvBlock(96),
+            nn.Conv2d(96, 128, kernel_size=3, stride=1, padding=1),
+            nn.GroupNorm(8, 128),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d((board_height, board_width)),
+            nn.Flatten(),
+            nn.Linear(128 * board_height * board_width, 256),
+            nn.ReLU(),
+        )
+
+        self.global_cnn = nn.Sequential(
+            nn.Conv2d(4, 64, kernel_size=3, stride=1, padding=1),
+            nn.GroupNorm(8, 64),
+            nn.ReLU(),
+            ResidualConvBlock(64),
+            nn.Conv2d(64, 96, kernel_size=3, stride=1, padding=1),
+            nn.GroupNorm(8, 96),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d((board_height, board_width)),
+            nn.Flatten(),
+            nn.Linear(96 * board_height * board_width, 192),
+            nn.ReLU(),
+        )
+
+        self.hand_global = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(int(np.prod(hand_shape)), 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+        )
+        self.available_fc = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(3, 32),
+            nn.ReLU(),
+        )
+
+        combined_size = (3 * 256) + 192 + 64 + 32
+        self.fc_combined = nn.Sequential(
+            nn.Linear(combined_size, 768),
+            nn.ReLU(),
+            nn.LayerNorm(768),
+            nn.Linear(768, features_dim),
+            nn.ReLU(),
+        )
+
+    def forward(self, observations):
+        board = observations["board"].float()
+        valid_actions = observations["valid_actions"].float()
+        hand = observations["hand"].float()
+        available = observations["available"].float()
+
+        batch_size = board.shape[0]
+        slot_features = []
+        coords = self.coord_channels.expand(batch_size, -1, -1, -1)
+
+        for slot_idx in range(3):
+            slot_hand = hand[:, slot_idx].reshape(batch_size, -1)
+            slot_embedding = self.slot_hand_encoder(slot_hand).view(batch_size, 24, 1, 1).expand(-1, -1, self.board_height, self.board_width)
+            slot_available = available[:, slot_idx].view(batch_size, 1, 1, 1).expand(-1, 1, self.board_height, self.board_width)
+            slot_valid = valid_actions[:, slot_idx:slot_idx + 1]
+
+            slot_input = torch.cat([board, slot_valid, slot_available, coords, slot_embedding], dim=1)
+            slot_features.append(self.slot_cnn(slot_input))
+
+        all_valid = valid_actions
+        global_input = torch.cat([board, all_valid], dim=1)
+        global_features = self.global_cnn(global_input)
+        hand_features = self.hand_global(hand)
+        available_features = self.available_fc(available)
+
+        combined = torch.cat([*slot_features, global_features, hand_features, available_features], dim=1)
+        return self.fc_combined(combined)
+
+
+class BlockBlastEnv(gym.Env):
+    def __init__(
+        self,
+        reward_config=None,
+        apply_hole_penalty=False,
+        fixed_game_seed=None,
+        shape_pool="all",
+        hand_generator="solvable",
+        board_size=BOARD_SIZE,
+    ):
+        super().__init__()
+        self.fixed_game_seed = fixed_game_seed
+        self.shape_pool = shape_pool
+        self.hand_generator = hand_generator
+        self.board_size = int(board_size)
+        self.actions_per_hand = self.board_size * self.board_size
+        self.action_space_size = HAND_SIZE * self.actions_per_hand
+        self.shape_keys = TRAINING_POOLS[shape_pool]
+        self.game = BlockBlastLogic(
+            rng=self._new_game_rng(),
+            shape_keys=self.shape_keys,
+            hand_generator=self.hand_generator,
+            complexity_weights=self._complexity_weights_from_reward_config(reward_config),
+            board_size=self.board_size,
+        )
+        self.action_space = spaces.Discrete(self.action_space_size)
+        self.apply_hole_penalty = apply_hole_penalty
+        
+        self.observation_space = spaces.Dict({
+            "board": spaces.Box(low=0, high=1, shape=(1, self.board_size, self.board_size), dtype=np.int32),
+            "valid_actions": spaces.MultiBinary((HAND_SIZE, self.board_size, self.board_size)),
+            "hand": spaces.Box(low=0, high=1, shape=(HAND_SIZE, HAND_PAD_SIZE, HAND_PAD_SIZE), dtype=np.int32),
+            "available": spaces.MultiBinary(3)
+        })
+        
+        self.reward_config = {
+            "placement_reward": 0.0,
+            "line_clear_scale": 10.0,
+            "line_clear_bonus": 0.0,
+            "stage_complete_reward": 10.0,
+            "no_line_penalty": 0.0,
+            "game_over_penalty": 200.0,
+            "game_over_early_weight": 3.0,
+            "reward_scale": 1.0,
+            "hole_penalty_weight": 0.25,
+            "created_hole_penalty_weight": 1.0,
+            "contact_reward_scale": 12.0,
+            "contact_reward_power": 1.25,
+            "contact_reward_threshold": 0.0,
+            "contact_penalty_scale": 0.0,
+            "complexity_simple_prob": 0.78,
+            "complexity_medium_prob": 0.18,
+            "complexity_hard_prob": 0.04,
+        }
+        if reward_config:
+            self.reward_config.update(reward_config)
+
+    @staticmethod
+    def _complexity_weights_from_reward_config(reward_config):
+        if not reward_config:
+            return None
+        return {
+            "simple": reward_config.get("complexity_simple_prob", 0.78),
+            "medium": reward_config.get("complexity_medium_prob", 0.18),
+            "hard": reward_config.get("complexity_hard_prob", 0.04),
+        }
+
+    def _new_game_rng(self):
+        if self.fixed_game_seed is not None:
+            return random.Random(self.fixed_game_seed)
+        seed = int(self.np_random.integers(0, 2**32 - 1))
+        return random.Random(seed)
+
+    def valid_action_mask(self):
+        mask = np.zeros(self.action_space_size, dtype=np.int8)
+        for hand_idx in range(HAND_SIZE):
+            if not self.game.available[hand_idx]:
+                continue
+            block = self.game.hand[hand_idx]
+            for r in range(self.board_size):
+                for c in range(self.board_size):
+                    if self.game.can_place(block, r, c):
+                        action_idx = (hand_idx * self.actions_per_hand) + (r * self.board_size) + c
+                        mask[action_idx] = 1
+        return mask
+
+    def _count_small_hole_cells(self, grid):
+        visited = np.zeros_like(grid, dtype=bool)
+        small_hole_cells = 0
+        
+        def bfs_flood_fill(start_r, start_c):
+            if visited[start_r, start_c] or grid[start_r, start_c] != 0:
+                return 0
+            
+            queue = deque([(start_r, start_c)])
+            visited[start_r, start_c] = True
+            region_size = 1
+            
+            while queue:
+                r, c = queue.popleft()
+                for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    nr, nc = r + dr, c + dc
+                    if 0 <= nr < self.board_size and 0 <= nc < self.board_size and not visited[nr, nc] and grid[nr, nc] == 0:
+                        visited[nr, nc] = True
+                        queue.append((nr, nc))
+                        region_size += 1
+            
+            return region_size
+        
+        for r in range(self.board_size):
+            for c in range(self.board_size):
+                if grid[r, c] == 0 and not visited[r, c]:
+                    region_size = bfs_flood_fill(r, c)
+                    if 1 <= region_size <= 3:
+                        small_hole_cells += region_size
+        
+        return small_hole_cells
+
+    def _calculate_holes_penalty(self, grid, previous_grid=None):
+        cfg = self.reward_config
+        current_hole_cells = self._count_small_hole_cells(grid)
+        penalty = current_hole_cells * cfg["hole_penalty_weight"]
+        previous_hole_cells = None
+        created_hole_cells = 0
+
+        if previous_grid is not None:
+            previous_hole_cells = self._count_small_hole_cells(previous_grid)
+            created_hole_cells = max(current_hole_cells - previous_hole_cells, 0)
+            penalty += created_hole_cells * cfg["created_hole_penalty_weight"]
+
+        return {
+            "penalty": -penalty,
+            "current_hole_cells": current_hole_cells,
+            "previous_hole_cells": previous_hole_cells,
+            "created_hole_cells": created_hole_cells,
+        }
+
+    def _get_obs(self):
+        padded_hand = np.zeros((HAND_SIZE, HAND_PAD_SIZE, HAND_PAD_SIZE), dtype=np.int32)
+        for i, block in enumerate(self.game.hand):
+            h, w = block.shape
+            padded_hand[i, :h, :w] = block
+        
+        board_reshaped = self.game.grid.copy().reshape(1, self.board_size, self.board_size).astype(np.int32)
+        
+        return {
+            "board": board_reshaped,
+            "valid_actions": self.valid_action_mask().reshape(HAND_SIZE, self.board_size, self.board_size).astype(np.int8),
+            "hand": padded_hand,
+            "available": np.array(self.game.available, dtype=np.int8)
+        }
+
+    def _calculate_contact_stats(self, previous_grid, block, row, col):
+        block_h, block_w = block.shape
+        touching_edges = 0
+        external_edges = 0
+
+        for br in range(block_h):
+            for bc in range(block_w):
+                if block[br, bc] == 0:
+                    continue
+
+                board_r = row + br
+                board_c = col + bc
+
+                for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    nbr_br = br + dr
+                    nbr_bc = bc + dc
+
+                    if 0 <= nbr_br < block_h and 0 <= nbr_bc < block_w and block[nbr_br, nbr_bc] == 1:
+                        continue
+
+                    external_edges += 1
+                    nbr_r = board_r + dr
+                    nbr_c = board_c + dc
+                    if nbr_r < 0 or nbr_r >= self.board_size or nbr_c < 0 or nbr_c >= self.board_size:
+                        touching_edges += 1
+                        continue
+                    if previous_grid[nbr_r, nbr_c] == 1:
+                        touching_edges += 1
+
+        ratio = 0.0 if external_edges == 0 else (touching_edges / external_edges)
+        return {
+            "touching_edges": touching_edges,
+            "external_edges": external_edges,
+            "contact_ratio": ratio,
+        }
+
+    def _calculate_contact_reward(self, contact_ratio):
+        cfg = self.reward_config
+        threshold = max(0.0, min(float(cfg["contact_reward_threshold"]), 0.99))
+        power = cfg["contact_reward_power"]
+
+        if threshold <= 0.0:
+            reward = (contact_ratio ** power) * cfg["contact_reward_scale"]
+            return reward, contact_ratio
+
+        if contact_ratio < threshold:
+            miss_ratio = (threshold - contact_ratio) / max(threshold, 1e-6)
+            reward = -((miss_ratio ** power) * cfg["contact_penalty_scale"])
+            return reward, -miss_ratio
+
+        surplus_ratio = (contact_ratio - threshold) / max(1.0 - threshold, 1e-6)
+        reward = (surplus_ratio ** power) * cfg["contact_reward_scale"]
+        return reward, surplus_ratio
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        self.game = BlockBlastLogic(
+            rng=self._new_game_rng(),
+            shape_keys=self.shape_keys,
+            hand_generator=self.hand_generator,
+            complexity_weights=self._complexity_weights_from_reward_config(self.reward_config),
+            board_size=self.board_size,
+        )
+        return self._get_obs(), {}
+
+    def step(self, action):
+        hand_index = action // self.actions_per_hand
+        remainder = action % self.actions_per_hand
+        row = remainder // self.board_size
+        col = remainder % self.board_size
+        previous_grid = self.game.grid.copy()
+        placed_block = None
+        if 0 <= hand_index < len(self.game.hand):
+            placed_block = self.game.hand[hand_index].copy()
+        
+        is_valid, is_game_over, lines_cleared, f_rows, f_cols, stage_completed = self.game.step(hand_index, row, col)
+        
+        cfg = self.reward_config
+        reward = 0.0
+        reward_line = 0.0
+        reward_stage = 0.0
+        reward_contact = 0.0
+        reward_holes = 0.0
+        reward_game_over = 0.0
+        hole_stats = {
+            "current_hole_cells": 0,
+            "previous_hole_cells": None,
+            "created_hole_cells": 0,
+        }
+        contact_stats = {
+            "touching_edges": 0,
+            "external_edges": 0,
+            "contact_ratio": 0.0,
+        }
+        contact_score = 0.0
+        
+        if is_valid:
+            if placed_block is not None:
+                contact_stats = self._calculate_contact_stats(previous_grid, placed_block, row, col)
+            reward_contact, contact_score = self._calculate_contact_reward(contact_stats["contact_ratio"])
+            reward += reward_contact
+
+            if lines_cleared > 0:
+                reward_line = (lines_cleared ** 2) * cfg["line_clear_scale"]
+                reward_line += lines_cleared * cfg["line_clear_bonus"]
+                reward += reward_line
+            else:
+                reward += cfg["placement_reward"]
+                reward -= cfg["no_line_penalty"]
+            
+            if stage_completed:
+                reward_stage = cfg["stage_complete_reward"]
+                reward += reward_stage
+            
+            if self.apply_hole_penalty:
+                hole_stats = self._calculate_holes_penalty(self.game.grid, previous_grid)
+                reward_holes = hole_stats["penalty"]
+                reward += reward_holes
+        
+        if is_game_over:
+            early_loss_multiplier = 1.0 + (cfg["game_over_early_weight"] / (self.game.stages_passed + 1))
+            reward_game_over = -cfg["game_over_penalty"] * early_loss_multiplier
+            reward += reward_game_over
+        
+        reward *= cfg["reward_scale"]
+        
+        info = {
+            "anim_rows": f_rows,
+            "anim_cols": f_cols,
+            "reward/line": reward_line * cfg["reward_scale"],
+            "reward/stage": reward_stage * cfg["reward_scale"],
+            "reward/contact": reward_contact * cfg["reward_scale"],
+            "reward/holes": reward_holes * cfg["reward_scale"],
+            "reward/game_over": reward_game_over * cfg["reward_scale"],
+            "placement/contact_ratio": contact_stats["contact_ratio"],
+            "placement/contact_score": contact_score,
+            "placement/contact_threshold": cfg["contact_reward_threshold"],
+            "placement/touching_edges": contact_stats["touching_edges"],
+            "holes/current_cells": hole_stats["current_hole_cells"],
+            "holes/created_cells": hole_stats["created_hole_cells"],
+            "game/valid_actions": int(self.valid_action_mask().sum()),
+        }
+        
+        if is_game_over:
+            info["game/etap_max"] = self.game.stages_passed
+            info["game/linii_distruse"] = self.game.lines_destroyed
+            info["game/blocuri_puse"] = self.game.blocks_placed
+        
+        return self._get_obs(), reward, is_game_over, False, info
+
+---------
+Fisier: train.py
+Descriere: Porneste antrenarea MaskablePPO, evaluarea periodica, TensorBoard si salvarea modelelor.
+---------
+import argparse
+import os
+import time
+
+import numpy as np
+import torch
+from blocks import TRAINING_POOLS
+from env import BlockBlastEnv, ActionAwareCNNExtractor, CustomCNNExtractor, CustomCNNExtractorV2
+from sb3_contrib import MaskablePPO
+from sb3_contrib.common.wrappers import ActionMasker
+from stable_baselines3.common.callbacks import BaseCallback, CallbackList, CheckpointCallback
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
+
+def mask_fn(env):
+    if hasattr(env, "valid_action_mask"):
+        return env.valid_action_mask()
+
+    unwrapped = getattr(env, "unwrapped", None)
+    if unwrapped is not None and hasattr(unwrapped, "valid_action_mask"):
+        return unwrapped.valid_action_mask()
+
+    raise AttributeError("valid_action_mask() nu este disponibil pe mediul curent")
+
+class TensorboardStatsCallback(BaseCallback):
+    def __init__(self, enabled=True, verbose=0):
+        super().__init__(verbose)
+        self.enabled = enabled
+
+    def _on_step(self):
+        if not self.enabled:
+            return True
+
+        infos = self.locals.get("infos", [])
+        scalar_keys = [
+            "reward/line",
+            "reward/stage",
+            "reward/contact",
+            "reward/holes",
+            "reward/game_over",
+            "placement/contact_ratio",
+            "placement/contact_score",
+            "placement/contact_threshold",
+            "holes/current_cells",
+            "holes/created_cells",
+            "game/valid_actions",
+        ]
+
+        for key in scalar_keys:
+            values = [info[key] for info in infos if key in info]
+            if values:
+                self.logger.record(f"step_stats/{key.replace('/', '_')}", float(np.mean(values)))
+
+        for info in infos:
+            if "game/etap_max" in info:
+                self.logger.record("game_stats/Etape_Supravietuite", info["game/etap_max"])
+                self.logger.record("game_stats/Linii_Distruse", info["game/linii_distruse"])
+                self.logger.record("game_stats/Blocuri_Puse", info["game/blocuri_puse"])
+        return True
+
+
+class StageEvalCallback(BaseCallback):
+    def __init__(
+        self,
+        reward_config,
+        fixed_game_seed=None,
+        fixed_game_seeds=None,
+        eval_freq=0,
+        n_eval_episodes=50,
+        max_eval_steps=5000,
+        deterministic=True,
+        verbose=0,
+    ):
+        super().__init__(verbose)
+        self.reward_config = reward_config
+        self.fixed_game_seed = fixed_game_seed
+        self.fixed_game_seeds = fixed_game_seeds
+        self.shape_pool = reward_config["shape_pool"]
+        self.hand_generator = reward_config["hand_generator"]
+        self.eval_freq = eval_freq
+        self.n_eval_episodes = n_eval_episodes
+        self.max_eval_steps = max_eval_steps
+        self.deterministic = deterministic
+        self.last_eval_step = 0
+
+    def _on_step(self):
+        if self.eval_freq <= 0:
+            return True
+        if self.num_timesteps - self.last_eval_step < self.eval_freq:
+            return True
+
+        self.last_eval_step = self.num_timesteps
+        stages, lines, blocks = self._run_eval()
+
+        self.logger.record("eval_stages/mean", float(np.mean(stages)))
+        self.logger.record("eval_stages/median", float(np.median(stages)))
+        self.logger.record("eval_stages/p90", float(np.percentile(stages, 90)))
+        self.logger.record("eval_stages/max", float(np.max(stages)))
+        self.logger.record("eval_stats/mean_lines", float(np.mean(lines)))
+        self.logger.record("eval_stats/mean_blocks", float(np.mean(blocks)))
+
+        if self.verbose:
+            print(
+                f"Eval @ {self.num_timesteps}: mean_stages={np.mean(stages):.2f}, "
+                f"p90={np.percentile(stages, 90):.1f}, max={np.max(stages)}"
+            )
+
+        return True
+
+    def _run_eval(self):
+        stages = []
+        lines = []
+        blocks = []
+        eval_env = BlockBlastEnv(
+            reward_config=self.reward_config,
+            apply_hole_penalty=self.reward_config["apply_hole_penalty"],
+            fixed_game_seed=self.fixed_game_seed,
+            shape_pool=self.shape_pool,
+            hand_generator=self.hand_generator,
+        )
+
+        try:
+            for episode_idx in range(self.n_eval_episodes):
+                if self.fixed_game_seeds:
+                    eval_env.fixed_game_seed = self.fixed_game_seeds[episode_idx % len(self.fixed_game_seeds)]
+                obs, _ = eval_env.reset(seed=10_000 + episode_idx)
+                done = False
+                step_count = 0
+
+                while not done and step_count < self.max_eval_steps:
+                    action_mask = eval_env.valid_action_mask()
+                    action, _ = self.model.predict(
+                        obs,
+                        action_masks=action_mask,
+                        deterministic=self.deterministic,
+                    )
+                    obs, _, done, _, _ = eval_env.step(int(action))
+                    step_count += 1
+
+                stages.append(eval_env.game.stages_passed)
+                lines.append(eval_env.game.lines_destroyed)
+                blocks.append(eval_env.game.blocks_placed)
+        finally:
+            eval_env.close()
+
+        return np.array(stages), np.array(lines), np.array(blocks)
+
+
+def make_env(reward_config, fixed_game_seed=None):
+    def _init():
+        env = BlockBlastEnv(
+            reward_config=reward_config,
+            apply_hole_penalty=reward_config["apply_hole_penalty"],
+            fixed_game_seed=fixed_game_seed,
+            shape_pool=reward_config["shape_pool"],
+            hand_generator=reward_config["hand_generator"],
+        )
+        env = Monitor(env)
+        env = ActionMasker(env, mask_fn)
+        return env
+    return _init
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Train or benchmark the Block Blast PPO agent")
+    parser.add_argument("--device", choices=["auto", "cpu", "cuda", "mps"], default="auto")
+    parser.add_argument("--vec-env", choices=["subproc", "dummy"], default="subproc")
+    parser.add_argument("--subproc-start-method", choices=["fork", "forkserver", "spawn"], default="fork")
+    parser.add_argument("--num-cpu", type=int, default=8)
+    parser.add_argument("--n-steps", type=int, default=4096)
+    parser.add_argument("--batch-size", type=int, default=2048)
+    parser.add_argument("--n-epochs", type=int, default=8)
+    parser.add_argument("--learning-rate", type=float, default=0.0002)
+    parser.add_argument("--gamma", type=float, default=0.6)
+    parser.add_argument("--ent-coef", type=float, default=0.02)
+    parser.add_argument("--lr-schedule", choices=["constant", "linear"], default="linear")
+    parser.add_argument("--lr-final-ratio", type=float, default=0.2)
+    parser.add_argument("--total-timesteps", type=int, default=25_000_000)
+    parser.add_argument("--benchmark", action="store_true")
+    parser.add_argument("--benchmark-steps", type=int, default=30_000)
+    parser.add_argument("--model-path", default="./checkpoints/cnn/block_blast_cnn_v1")
+    parser.add_argument("--tb-log-name", default="PPO_BlockBlast_CNN_V1")
+    parser.add_argument("--log-dir", default="./tensorboard_logs/")
+    parser.add_argument("--checkpoint-dir", default="./checkpoints/cnn/")
+    parser.add_argument("--checkpoint-freq", type=int, default=0)
+    parser.add_argument("--resume", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--log-stats", action=argparse.BooleanOptionalAction, default=True)
+
+    parser.add_argument("--reward-placement", type=float, default=0.0)
+    parser.add_argument("--reward-line-scale", type=float, default=10.0)
+    parser.add_argument("--reward-line-bonus", type=float, default=0.0)
+    parser.add_argument("--reward-stage-complete", type=float, default=10.0)
+    parser.add_argument("--reward-no-line", type=float, default=0.0)
+    parser.add_argument("--reward-game-over", type=float, default=200.0)
+    parser.add_argument("--reward-game-over-early-weight", type=float, default=3.0)
+    parser.add_argument("--reward-contact-scale", type=float, default=12.0)
+    parser.add_argument("--reward-contact-power", type=float, default=1.25)
+    parser.add_argument("--reward-contact-threshold", type=float, default=0.0)
+    parser.add_argument("--reward-contact-penalty-scale", type=float, default=0.0)
+    parser.add_argument("--reward-scale", type=float, default=1.0)
+    parser.add_argument("--apply-hole-penalty", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--hole-penalty-weight", type=float, default=0.25)
+    parser.add_argument("--created-hole-penalty-weight", type=float, default=1.0)
+    parser.add_argument("--complexity-simple-prob", type=float, default=0.78)
+    parser.add_argument("--complexity-medium-prob", type=float, default=0.18)
+    parser.add_argument("--complexity-hard-prob", type=float, default=0.04)
+    parser.add_argument("--eval-freq", type=int, default=500_000)
+    parser.add_argument("--eval-episodes", type=int, default=100)
+    parser.add_argument("--max-eval-steps", type=int, default=5000)
+    parser.add_argument("--fixed-game-seed", type=int, default=None)
+    parser.add_argument("--fixed-game-seeds", default=None, help="Comma-separated seeds, assigned across envs and eval episodes.")
+    parser.add_argument("--fixed-game-seed-count", type=int, default=0, help="Use fixed-game-seed as the first seed and generate this many consecutive seeds.")
+    parser.add_argument("--init-from-model", default=None, help="Initialize policy weights from this model path, but keep current hyperparameters.")
+    parser.add_argument("--shape-pool", choices=sorted(TRAINING_POOLS.keys()), default="mini")
+    parser.add_argument("--hand-generator", choices=["solvable", "playable", "adaptive_playable", "random"], default="solvable")
+    parser.add_argument("--cnn-arch", choices=["base", "v2", "actionaware"], default="base")
+    parser.add_argument("--features-dim", type=int, default=256)
+    parser.add_argument("--net-arch", default="256,256", help="Comma-separated hidden sizes for policy/value heads.")
+
+    parser.add_argument("--torch-threads", type=int, default=0)
+    return parser.parse_args()
+
+
+def normalize_model_path(path):
+    if path.endswith(".zip"):
+        return path[:-4]
+    return path
+
+
+def parse_fixed_game_seeds(args):
+    if args.fixed_game_seeds:
+        return [int(value.strip()) for value in args.fixed_game_seeds.split(",") if value.strip()]
+    if args.fixed_game_seed is not None and args.fixed_game_seed_count > 0:
+        return [args.fixed_game_seed + offset for offset in range(args.fixed_game_seed_count)]
+    if args.fixed_game_seed is not None:
+        return [args.fixed_game_seed]
+    return None
+
+
+def resolve_device(choice):
+    if choice != "auto":
+        return choice
+
+    if torch.cuda.is_available():
+        print("Device: NVIDIA CUDA")
+        return "cuda"
+
+    if torch.backends.mps.is_available():
+        print("MPS este disponibil, dar CPU tinde sa fie mai rapid pentru acest proiect. Foloseste --device mps doar pentru test.")
+
+    print("Atentie: rulam pe CPU.")
+    return "cpu"
+
+
+def build_vec_env(vec_env_kind, num_cpu, reward_config, start_method="fork", fixed_game_seed=None, fixed_game_seeds=None):
+    env_fns = []
+    for env_index in range(num_cpu):
+        env_seed = fixed_game_seed
+        if fixed_game_seeds:
+            env_seed = fixed_game_seeds[env_index % len(fixed_game_seeds)]
+        env_fns.append(make_env(reward_config, fixed_game_seed=env_seed))
+    if vec_env_kind == "dummy":
+        return DummyVecEnv(env_fns)
+    return SubprocVecEnv(env_fns, start_method=start_method)
+
+
+def configure_torch_threads(thread_count):
+    if thread_count > 0:
+        torch.set_num_threads(thread_count)
+        try:
+            torch.set_num_interop_threads(max(1, min(thread_count, 4)))
+        except RuntimeError:
+            pass
+
+
+def build_reward_config(args):
+    return {
+        "placement_reward": args.reward_placement,
+        "line_clear_scale": args.reward_line_scale,
+        "line_clear_bonus": args.reward_line_bonus,
+        "stage_complete_reward": args.reward_stage_complete,
+        "no_line_penalty": args.reward_no_line,
+        "game_over_penalty": args.reward_game_over,
+        "game_over_early_weight": args.reward_game_over_early_weight,
+        "contact_reward_scale": args.reward_contact_scale,
+        "contact_reward_power": args.reward_contact_power,
+        "contact_reward_threshold": args.reward_contact_threshold,
+        "contact_penalty_scale": args.reward_contact_penalty_scale,
+        "reward_scale": args.reward_scale,
+        "apply_hole_penalty": args.apply_hole_penalty,
+        "hole_penalty_weight": args.hole_penalty_weight,
+        "created_hole_penalty_weight": args.created_hole_penalty_weight,
+        "complexity_simple_prob": args.complexity_simple_prob,
+        "complexity_medium_prob": args.complexity_medium_prob,
+        "complexity_hard_prob": args.complexity_hard_prob,
+        "shape_pool": args.shape_pool,
+        "hand_generator": args.hand_generator,
+    }
+
+
+def build_policy_kwargs(args):
+    extractor_class = {
+        "base": CustomCNNExtractor,
+        "v2": CustomCNNExtractorV2,
+        "actionaware": ActionAwareCNNExtractor,
+    }[args.cnn_arch]
+    net_arch = [int(value.strip()) for value in args.net_arch.split(",") if value.strip()]
+    return dict(
+        features_extractor_class=extractor_class,
+        features_extractor_kwargs=dict(features_dim=args.features_dim),
+        net_arch=dict(pi=net_arch, vf=net_arch),
+        activation_fn=torch.nn.ReLU,
+    )
+
+
+def build_learning_rate(args):
+    if args.lr_schedule == "constant":
+        return args.learning_rate
+
+    initial_lr = args.learning_rate
+    final_lr = max(initial_lr * args.lr_final_ratio, 1e-8)
+
+    def linear_decay(progress_remaining):
+        return final_lr + (initial_lr - final_lr) * progress_remaining
+
+    return linear_decay
+
+
+def ensure_parent_dir(path):
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+
+
+def build_model(env, device, args):
+    model_exists = os.path.exists(args.model_path + ".zip")
+    should_resume = args.resume and model_exists
+    init_from_model = normalize_model_path(args.init_from_model) if args.init_from_model else None
+
+    policy_kwargs = build_policy_kwargs(args)
+
+    if should_resume:
+        print("Gasit model existent. Continuam antrenamentul.")
+        model = MaskablePPO.load(args.model_path, env=env, tensorboard_log=args.log_dir, device=device)
+        print("Modelul incarcat pastreaza hiperparametrii salvati. Pentru setari noi foloseste --no-resume.")
+        return model, True
+
+    if init_from_model:
+        print("Initializam model nou cu hiperparametrii curenti si greutati preluate din modelul indicat.")
+    else:
+        print("Initializam un model nou de la zero.")
+
+    model = MaskablePPO(
+        "MultiInputPolicy",
+        env,
+        verbose=1,
+        learning_rate=build_learning_rate(args),
+        gamma=args.gamma,
+        ent_coef=args.ent_coef,
+        n_steps=args.n_steps,
+        batch_size=args.batch_size,
+        n_epochs=args.n_epochs,
+        tensorboard_log=args.log_dir,
+        device=device,
+        policy_kwargs=policy_kwargs,
+    )
+
+    if init_from_model:
+        if not os.path.exists(init_from_model + ".zip"):
+            raise FileNotFoundError(f"Nu exista modelul pentru init-from-model: {init_from_model}.zip")
+        source_model = MaskablePPO.load(init_from_model, device=device)
+        model.policy.load_state_dict(source_model.policy.state_dict())
+        print(f"Greutati incarcate din: {init_from_model}.zip")
+
+    return model, False
+
+
+def build_training_callbacks(args, reward_config):
+    callbacks = []
+
+    if args.log_stats:
+        callbacks.append(TensorboardStatsCallback(enabled=True))
+
+    if args.eval_freq > 0:
+        callbacks.append(
+            StageEvalCallback(
+                reward_config=reward_config,
+                fixed_game_seed=args.fixed_game_seed,
+                fixed_game_seeds=args.resolved_fixed_game_seeds,
+                eval_freq=args.eval_freq,
+                n_eval_episodes=args.eval_episodes,
+                max_eval_steps=args.max_eval_steps,
+                deterministic=True,
+                verbose=1,
+            )
+        )
+
+    if args.checkpoint_freq > 0:
+        os.makedirs(args.checkpoint_dir, exist_ok=True)
+        callbacks.append(
+            CheckpointCallback(
+                save_freq=max(args.checkpoint_freq // max(args.num_cpu, 1), 1),
+                save_path=args.checkpoint_dir,
+                name_prefix=os.path.basename(args.model_path),
+            )
+        )
+
+    if not callbacks:
+        return None
+
+    if len(callbacks) == 1:
+        return callbacks[0]
+
+    return CallbackList(callbacks)
+
+
+def run_benchmark(args, reward_config):
+    candidate_configs = [
+        {"device": "cpu", "num_cpu": 8, "n_steps": 2048, "batch_size": 1024, "n_epochs": 8, "torch_threads": 1, "vec_env": "subproc"},
+        {"device": "cpu", "num_cpu": 12, "n_steps": 2048, "batch_size": 1024, "n_epochs": 8, "torch_threads": 1, "vec_env": "subproc"},
+        {"device": "cpu", "num_cpu": 16, "n_steps": 2048, "batch_size": 1024, "n_epochs": 8, "torch_threads": 1, "vec_env": "subproc"},
+        {"device": "cpu", "num_cpu": 12, "n_steps": 1024, "batch_size": 1024, "n_epochs": 8, "torch_threads": 1, "vec_env": "subproc"},
+        {"device": "cpu", "num_cpu": 12, "n_steps": 2048, "batch_size": 2048, "n_epochs": 5, "torch_threads": 1, "vec_env": "subproc"},
+        {"device": "cpu", "num_cpu": 8, "n_steps": 2048, "batch_size": 1024, "n_epochs": 8, "torch_threads": 4, "vec_env": "subproc"},
+        {"device": "cpu", "num_cpu": 1, "n_steps": 2048, "batch_size": 1024, "n_epochs": 8, "torch_threads": 4, "vec_env": "dummy"},
+    ]
+
+    if torch.backends.mps.is_available():
+        candidate_configs.append(
+            {"device": "mps", "num_cpu": 8, "n_steps": 2048, "batch_size": 1024, "n_epochs": 8, "torch_threads": 4, "vec_env": "subproc"}
+        )
+
+    results = []
+    print("Pornim benchmark-ul scurt pentru FPS.")
+
+    for index, candidate in enumerate(candidate_configs, start=1):
+        print(
+            f"\n[{index}/{len(candidate_configs)}] device={candidate['device']} vec_env={candidate['vec_env']} "
+            f"num_cpu={candidate['num_cpu']} n_steps={candidate['n_steps']} batch_size={candidate['batch_size']} "
+            f"n_epochs={candidate['n_epochs']}"
+        )
+
+        configure_torch_threads(candidate["torch_threads"])
+        env = build_vec_env(candidate["vec_env"], candidate["num_cpu"], reward_config, args.subproc_start_method)
+        model = MaskablePPO(
+            "MultiInputPolicy",
+            env,
+            verbose=0,
+            learning_rate=build_learning_rate(args),
+            gamma=args.gamma,
+            ent_coef=args.ent_coef,
+            n_steps=candidate["n_steps"],
+            batch_size=candidate["batch_size"],
+            n_epochs=candidate["n_epochs"],
+            device=candidate["device"],
+            policy_kwargs=build_policy_kwargs(args),
+        )
+
+        start_time = time.perf_counter()
+        model.learn(
+            total_timesteps=args.benchmark_steps,
+            reset_num_timesteps=True,
+            tb_log_name="BENCHMARK",
+            callback=None,
+        )
+        elapsed = time.perf_counter() - start_time
+        actual_steps = model.num_timesteps
+        fps = actual_steps / elapsed if elapsed > 0 else 0.0
+        print(f"    -> elapsed={elapsed:.2f}s, steps={actual_steps}, fps={fps:.1f}")
+        results.append((fps, candidate))
+
+        env.close()
+
+    results.sort(key=lambda item: item[0], reverse=True)
+    best_fps, best_candidate = results[0]
+
+    print("\nRezultate benchmark:")
+    for fps, candidate in results:
+        print(
+            f"  fps={fps:.1f} | device={candidate['device']} vec_env={candidate['vec_env']} "
+            f"num_cpu={candidate['num_cpu']} n_steps={candidate['n_steps']} batch_size={candidate['batch_size']} "
+            f"n_epochs={candidate['n_epochs']}"
+        )
+
+    print(
+        f"\nCea mai rapida varianta: device={best_candidate['device']} vec_env={best_candidate['vec_env']} "
+        f"num_cpu={best_candidate['num_cpu']} n_steps={best_candidate['n_steps']} "
+        f"batch_size={best_candidate['batch_size']} n_epochs={best_candidate['n_epochs']} "
+        f"cu ~{best_fps:.1f} FPS"
+    )
+
+
+def main():
+    args = parse_args()
+    args.resolved_fixed_game_seeds = parse_fixed_game_seeds(args)
+
+    if args.torch_threads <= 0:
+        args.torch_threads = max(1, min(4, (os.cpu_count() or 1) // 2))
+
+    configure_torch_threads(args.torch_threads)
+    reward_config = build_reward_config(args)
+
+    if args.benchmark:
+        run_benchmark(args, reward_config)
+        return
+
+    device = resolve_device(args.device)
+    print(f"Antrenament pe: {device.upper()}")
+    print(f"Se pornesc {args.num_cpu} instante de joc in paralel.")
+    print(f"Model path: {args.model_path}.zip")
+    print(f"Checkpoint dir: {args.checkpoint_dir}")
+    print(f"Hole penalty: {'ENABLED' if args.apply_hole_penalty else 'DISABLED'}")
+    print(f"Shape pool: {args.shape_pool} ({len(TRAINING_POOLS[args.shape_pool])} piese)")
+    print(f"Hand generator: {args.hand_generator}")
+    print(f"CNN arch: {args.cnn_arch}, features_dim={args.features_dim}")
+    print(
+        f"Contact reward: threshold={args.reward_contact_threshold}, "
+        f"plus_scale={args.reward_contact_scale}, minus_scale={args.reward_contact_penalty_scale}, "
+        f"power={args.reward_contact_power}"
+    )
+    print(
+        f"PPO rollout: n_steps={args.n_steps}, envs={args.num_cpu}, "
+        f"batch={args.batch_size}, epochs={args.n_epochs}, gamma={args.gamma}, lr={args.learning_rate}"
+    )
+    if args.resolved_fixed_game_seeds:
+        preview = ", ".join(str(seed) for seed in args.resolved_fixed_game_seeds[:12])
+        suffix = "" if len(args.resolved_fixed_game_seeds) <= 12 else ", ..."
+        print(f"Fixed game seeds: {preview}{suffix} ({len(args.resolved_fixed_game_seeds)} seed-uri)")
+
+    env = build_vec_env(
+        args.vec_env,
+        args.num_cpu,
+        reward_config,
+        args.subproc_start_method,
+        fixed_game_seed=args.fixed_game_seed,
+        fixed_game_seeds=args.resolved_fixed_game_seeds,
+    )
+    model, resumed = build_model(env, device, args)
+
+    print("Incepem antrenamentul.")
+    callback = build_training_callbacks(args, reward_config)
+    interrupted = False
+
+    try:
+        model.learn(
+            total_timesteps=args.total_timesteps,
+            tb_log_name=args.tb_log_name,
+            reset_num_timesteps=not resumed,
+            callback=callback,
+        )
+
+        print("Antrenament complet! Salvam modelul final...")
+    except KeyboardInterrupt:
+        interrupted = True
+        print("\nAntrenament oprit manual. Salvam progresul curent.")
+    finally:
+        ensure_parent_dir(args.model_path)
+        model.save(args.model_path)
+        print(f"Model salvat in: {args.model_path}.zip")
+
+        try:
+            env.close()
+        except Exception:
+            pass
+
+    if interrupted:
+        print("Poti relua ulterior cu --resume daca vrei sa continui din acest punct.")
+
+if __name__ == "__main__":
+    main()
+
+---------
+Fisier: watch.py
+Descriere: Interfata vizuala pentru testarea modelelor, euristicii, editorului si modului om versus AI.
+---------
+import argparse
+import os
+import sys
+import time
+import traceback
+
+import numpy as np
+from PySide6.QtCore import QPoint, QRect, QTimer, Qt
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QPainter, QPen
+from PySide6.QtWidgets import QApplication, QComboBox, QWidget
+
+from blocks import SHAPE_LIBRARY, TRAINING_POOLS
+from env import BlockBlastEnv
+from sb3_contrib import MaskablePPO
+from sb3_contrib.common.wrappers import ActionMasker
+
+DEFAULT_BOARD_SIZE = 8
+GRID_SIZE = DEFAULT_BOARD_SIZE
+HAND_SIZE = 3
+BOARD_CELLS = GRID_SIZE * GRID_SIZE
+
+WINDOW_WIDTH = 1680
+WINDOW_HEIGHT = 930
+
+FPS = 60
+AI_STEP_INTERVAL = 0.35
+
+SINGLE_CELL = 60
+SINGLE_BOARD_X = 88
+SINGLE_BOARD_Y = 130
+SINGLE_BOARD_SIZE = GRID_SIZE * SINGLE_CELL
+
+DUAL_CELL = 52
+DUAL_BOARD_X_LEFT = 86
+DUAL_BOARD_X_RIGHT = 748
+DUAL_BOARD_Y = 126
+DUAL_BOARD_SIZE = GRID_SIZE * DUAL_CELL
+
+HAND_SLOT_W = 130
+HAND_SLOT_H = 130
+HAND_SLOT_GAP = 20
+
+MINI_CELL = 22
+HAND_BLOCK_OFFSET_X = 24
+HAND_BLOCK_OFFSET_Y = 24
+
+MENU_BTN_W = 440
+MENU_BTN_H = 78
+MENU_BTN_GAP = 18
+
+BG = (11, 18, 34)
+PANEL = (22, 34, 62)
+PANEL_2 = (30, 45, 79)
+BOARD_BG = (18, 29, 52)
+CELL_BG = (40, 54, 85)
+CELL_FILL = (98, 205, 255)
+CELL_SHADOW = (42, 130, 188)
+TEXT = (236, 243, 255)
+MUTED = (162, 178, 204)
+DIM = (97, 110, 142)
+WHITE = (255, 255, 255)
+HUMAN = (255, 187, 85)
+AI = (112, 218, 164)
+WARN = (255, 203, 100)
+BAD = (255, 111, 133)
+GOOD = (88, 231, 157)
+GHOST_VALID = (106, 220, 149)
+GHOST_INVALID = (233, 104, 126)
+
+WATCH_DEFAULTS = {
+    4: {
+        "model_path": "checkpoints/4x4_best8x8/4x4_best8x8_basecnn_g03_lr2e3/block_blast_4x4_best8x8_basecnn_v1.zip",
+        "shape_pool": "mini",
+        "hand_generator": "adaptive_playable",
+    },
+    8: {
+        "model_path": "checkpoints/cnn_contact_threshold/basecnn_contact_threshold_gamma06_lr8e4_lines28/block_blast_basecnn_contact_threshold_gamma06_v1.zip",
+        "shape_pool": "all",
+        "hand_generator": "adaptive_playable",
+    },
+}
+
+
+def configure_board_mode(board_size):
+    global GRID_SIZE, BOARD_CELLS, SINGLE_BOARD_SIZE, DUAL_BOARD_SIZE
+    GRID_SIZE = int(board_size)
+    BOARD_CELLS = GRID_SIZE * GRID_SIZE
+    SINGLE_BOARD_SIZE = GRID_SIZE * SINGLE_CELL
+    DUAL_BOARD_SIZE = GRID_SIZE * DUAL_CELL
+
+
+def resolve_watch_defaults(args):
+    defaults = WATCH_DEFAULTS.get(int(args.board_size), WATCH_DEFAULTS[DEFAULT_BOARD_SIZE])
+    if getattr(args, "model_path", None) is None:
+        args.model_path = defaults["model_path"]
+    if getattr(args, "shape_pool", None) is None:
+        args.shape_pool = defaults["shape_pool"]
+    if getattr(args, "hand_generator", None) is None:
+        args.hand_generator = defaults["hand_generator"]
+    return args
+
+SHAPE_KEYS = list(SHAPE_LIBRARY.keys())
+
+WATCH_REWARD_CONFIG = {
+    "placement_reward": 0.0,
+    "line_clear_scale": 28.0,
+    "line_clear_bonus": 1.5,
+    "stage_complete_reward": 0.0,
+    "no_line_penalty": 0.0,
+    "game_over_penalty": 90.0,
+    "game_over_early_weight": 0.0,
+    "contact_reward_scale": 24.0,
+    "contact_reward_power": 1.15,
+    "contact_reward_threshold": 0.40,
+    "contact_penalty_scale": 8.0,
+    "complexity_simple_prob": 0.78,
+    "complexity_medium_prob": 0.18,
+    "complexity_hard_prob": 0.04,
+}
+
+MODEL_METRICS = {
+    "checkpoints/4x4_best8x8/4x4_best8x8_basecnn_g03_lr2e3/block_blast_4x4_best8x8_basecnn_v1.zip": ("2.5", "11"),
+    "checkpoints/cnn_contact_threshold/basecnn_contact_threshold_gamma06_lr8e4_lines28/block_blast_basecnn_contact_threshold_gamma06_v1.zip": ("20.2", "51"),
+    "checkpoints/cnn_contact_threshold/short_g03_lr2e3/block_blast_basecnn_contact_threshold_short_v1.zip": ("19.9", "60"),
+    "checkpoints/cnn_contact_threshold/short_g05_lr2e2/block_blast_basecnn_contact_threshold_short_v1.zip": ("13.8", "n/a"),
+    "checkpoints/cnn_holes/block_blast_cnn_holes_v1.zip": ("n/a", "n/a"),
+    "checkpoints/cnn_immediate_contact/final_softgen_gamma04_lr2e4_lines42_contact18/block_blast_cnn_immediate_contact_gamma04_lines_v1.zip": ("n/a", "n/a"),
+}
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Block Blast visual arena (PySide6)")
+    parser.add_argument("--board-size", type=int, choices=[4, 8], default=DEFAULT_BOARD_SIZE, help="Select the board size to run")
+    parser.add_argument(
+        "--model-path",
+        default=None,
+        help="Model path with or without .zip. If omitted, a default for the selected board size is used.",
+    )
+    parser.add_argument("--no-model", action="store_true", help="Start without loading a PPO model; heuristic mode still works")
+    parser.add_argument("--ai-interval", type=float, default=AI_STEP_INTERVAL)
+    parser.add_argument("--shape-pool", choices=sorted(TRAINING_POOLS.keys()), default=None)
+    parser.add_argument("--hand-generator", choices=["random", "playable", "adaptive_playable", "solvable"], default=None)
+    parser.add_argument("--fixed-game-seed", type=int, default=None)
+    return parser.parse_args()
+
+
+def model_display_name(path):
+    parts = path.split(os.sep)
+    if len(parts) >= 3 and parts[-2] != "checkpoints":
+        return parts[-2]
+    return os.path.splitext(os.path.basename(path))[0]
+
+
+def infer_model_config(path):
+    normalized = path.replace("\\", "/")
+    board_size = 4 if ("4x4" in normalized or "/bc/" in normalized) else 8
+    shape_pool = "mini" if board_size == 4 else "all"
+    return {
+        "path": path,
+        "board_size": board_size,
+        "shape_pool": shape_pool,
+        "hand_generator": "adaptive_playable",
+    }
+
+
+def discover_models():
+    models = []
+    for root, _dirs, files in os.walk("checkpoints"):
+        for file_name in files:
+            if file_name.endswith(".zip"):
+                path = os.path.join(root, file_name)
+                config = infer_model_config(path)
+                mean_stage, max_stage = MODEL_METRICS.get(path.replace("\\", "/"), ("n/a", "n/a"))
+                config["mean_stage"] = mean_stage
+                config["max_stage"] = max_stage
+                config["name"] = model_display_name(path)
+                models.append(config)
+    models.sort(key=lambda item: (item["board_size"], item["name"], item["path"]))
+    return models
+
+
+def mask_fn(env):
+    if hasattr(env, "valid_action_mask"):
+        return env.valid_action_mask()
+
+    unwrapped = getattr(env, "unwrapped", None)
+    if unwrapped is not None and hasattr(unwrapped, "valid_action_mask"):
+        return unwrapped.valid_action_mask()
+
+    raise AttributeError("valid_action_mask() is not available on the current environment")
+
+
+def decode_action(action):
+    actions_per_hand = GRID_SIZE * GRID_SIZE
+    hand_idx = action // actions_per_hand
+    remainder = action % actions_per_hand
+    row = remainder // GRID_SIZE
+    col = remainder % GRID_SIZE
+    return hand_idx, row, col
+
+
+def action_from_selection(hand_index, row, col):
+    return (hand_index * (GRID_SIZE * GRID_SIZE)) + (row * GRID_SIZE) + col
+
+
+def shape_key_from_matrix(matrix):
+    for key in SHAPE_KEYS:
+        shape = SHAPE_LIBRARY[key]
+        if shape.shape == matrix.shape and np.array_equal(shape, matrix):
+            return key
+    return SHAPE_KEYS[0]
+
+
+def capture_game_state(game):
+    return {
+        "grid": game.grid.copy(),
+        "hand": [block.copy() for block in game.hand],
+        "available": list(game.available),
+        "stages_passed": game.stages_passed,
+        "lines_destroyed": game.lines_destroyed,
+        "blocks_placed": game.blocks_placed,
+        "rng_state": game.rng.getstate(),
+    }
+
+
+def restore_game_state(game, game_state):
+    game.grid = game_state["grid"].copy()
+    game.hand = [block.copy() for block in game_state["hand"]]
+    game.available = list(game_state["available"])
+    game.stages_passed = game_state["stages_passed"]
+    game.lines_destroyed = game_state["lines_destroyed"]
+    game.blocks_placed = game_state["blocks_placed"]
+    if "rng_state" in game_state:
+        game.rng.setstate(game_state["rng_state"])
+
+
+def create_env_bundle(args=None):
+    board_size = getattr(args, "board_size", DEFAULT_BOARD_SIZE)
+    raw_env = BlockBlastEnv(
+        reward_config=WATCH_REWARD_CONFIG,
+        apply_hole_penalty=False,
+        fixed_game_seed=getattr(args, "fixed_game_seed", None),
+        shape_pool=getattr(args, "shape_pool", WATCH_DEFAULTS[board_size]["shape_pool"]),
+        hand_generator=getattr(args, "hand_generator", WATCH_DEFAULTS[board_size]["hand_generator"]),
+        board_size=board_size,
+    )
+    env = ActionMasker(raw_env, mask_fn)
+    obs, _ = env.reset()
+    return raw_env, env, obs
+
+
+def load_model(env, model_path):
+    normalized_path = model_path[:-4] if model_path.endswith(".zip") else model_path
+    if not os.path.exists(normalized_path + ".zip"):
+        raise FileNotFoundError(normalized_path + ".zip")
+
+    try:
+        return MaskablePPO.load(normalized_path, env=env)
+    except ValueError as exc:
+        raise RuntimeError(
+            "Failed to load model due to env/model mismatch. "
+            "Use a CNN checkpoint like checkpoints/cnn_noholes/block_blast_cnn_noholes_v1. "
+            f"Original error: {exc}"
+        ) from exc
+
+
+def to_color(rgb, alpha=255):
+    return QColor(rgb[0], rgb[1], rgb[2], alpha)
+
+
+def choose_font_family():
+    preferred = [
+        "Avenir Next",
+        "SF Pro Text",
+        "Helvetica Neue",
+        "Noto Sans",
+        "Segoe UI",
+        "Ubuntu",
+    ]
+    families = set(QFontDatabase.families())
+    for family in preferred:
+        if family in families:
+            return family
+
+    app = QApplication.instance()
+    if app is not None:
+        return app.font().family()
+    return "Sans Serif"
+
+
+def point_to_cell(mouse_pos, board_x, board_y, cell_size):
+    mx, my = mouse_pos
+    if board_x <= mx < board_x + GRID_SIZE * cell_size and board_y <= my < board_y + GRID_SIZE * cell_size:
+        col = int((mx - board_x) // cell_size)
+        row = int((my - board_y) // cell_size)
+        return row, col
+    return None
+
+
+def compute_block_cells(block_shape, anchor_row, anchor_col):
+    cells = []
+    for r in range(block_shape.shape[0]):
+        for c in range(block_shape.shape[1]):
+            if block_shape[r, c] == 1:
+                cells.append((anchor_row + r, anchor_col + c))
+    return cells
+
+
+def get_hand_slot_rects(start_x, start_y):
+    rects = []
+    for i in range(HAND_SIZE):
+        rects.append(QRect(start_x + i * (HAND_SLOT_W + HAND_SLOT_GAP), start_y, HAND_SLOT_W, HAND_SLOT_H))
+    return rects
+
+
+def make_button(rect, label, accent, key=None):
+    button = {"rect": rect, "label": label, "accent": accent}
+    if key is not None:
+        button["key"] = key
+    return button
+
+
+def ai_step(model, obs, raw_env, env):
+    if model is None:
+        return obs, True, "No PPO model is loaded. Use heuristic mode or start without --no-model."
+
+    action_masks = mask_fn(raw_env)
+    if not np.any(action_masks):
+        return obs, True, "No valid AI moves available."
+
+    action, _ = model.predict(obs, action_masks=action_masks, deterministic=True)
+    action = int(action)
+    hand_idx, row, col = decode_action(action)
+
+    next_obs, reward, done, _, _ = env.step(action)
+    msg = f"AI placed slot {hand_idx + 1} at R{row} C{col} | reward {reward:.1f}"
+    return next_obs, done, msg
+
+
+def can_place_on_grid(grid, block, row, col):
+    block_h, block_w = block.shape
+    if row + block_h > GRID_SIZE or col + block_w > GRID_SIZE:
+        return False
+    target = grid[row:row + block_h, col:col + block_w]
+    return not np.any(np.logical_and(target, block))
+
+
+def valid_actions_for_state(grid, hand, available):
+    actions = []
+    for hand_idx, is_available in enumerate(available):
+        if not is_available:
+            continue
+        block = hand[hand_idx]
+        block_h, block_w = block.shape
+        for row in range(GRID_SIZE - block_h + 1):
+            for col in range(GRID_SIZE - block_w + 1):
+                if can_place_on_grid(grid, block, row, col):
+                    actions.append(action_from_selection(hand_idx, row, col))
+    return actions
+
+
+def apply_action_to_grid(grid, block, row, col):
+    next_grid = grid.copy()
+    block_h, block_w = block.shape
+    next_grid[row:row + block_h, col:col + block_w] += block
+
+    full_rows = list(np.where(np.all(next_grid == 1, axis=1))[0])
+    full_cols = list(np.where(np.all(next_grid == 1, axis=0))[0])
+    if full_rows:
+        next_grid[full_rows, :] = 0
+    if full_cols:
+        next_grid[:, full_cols] = 0
+
+    return next_grid, len(full_rows) + len(full_cols)
+
+
+def contact_ratio_on_grid(previous_grid, block, row, col):
+    touching_edges = 0
+    external_edges = 0
+    block_h, block_w = block.shape
+
+    for block_row in range(block_h):
+        for block_col in range(block_w):
+            if block[block_row, block_col] == 0:
+                continue
+
+            board_row = row + block_row
+            board_col = col + block_col
+            for d_row, d_col in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                neighbor_block_row = block_row + d_row
+                neighbor_block_col = block_col + d_col
+                if (
+                    0 <= neighbor_block_row < block_h
+                    and 0 <= neighbor_block_col < block_w
+                    and block[neighbor_block_row, neighbor_block_col] == 1
+                ):
+                    continue
+
+                external_edges += 1
+                neighbor_row = board_row + d_row
+                neighbor_col = board_col + d_col
+                if (
+                    neighbor_row < 0
+                    or neighbor_row >= GRID_SIZE
+                    or neighbor_col < 0
+                    or neighbor_col >= GRID_SIZE
+                    or previous_grid[neighbor_row, neighbor_col] == 1
+                ):
+                    touching_edges += 1
+
+    return 0.0 if external_edges == 0 else touching_edges / external_edges
+
+
+def empty_region_stats(grid):
+    visited = np.zeros_like(grid, dtype=bool)
+    largest_region = 0
+    region_count = 0
+
+    for row in range(GRID_SIZE):
+        for col in range(GRID_SIZE):
+            if grid[row, col] != 0 or visited[row, col]:
+                continue
+
+            queue = [(row, col)]
+            visited[row, col] = True
+            region_size = 0
+            while queue:
+                current_row, current_col = queue.pop()
+                region_size += 1
+                for d_row, d_col in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    next_row = current_row + d_row
+                    next_col = current_col + d_col
+                    if (
+                        0 <= next_row < GRID_SIZE
+                        and 0 <= next_col < GRID_SIZE
+                        and not visited[next_row, next_col]
+                        and grid[next_row, next_col] == 0
+                    ):
+                        visited[next_row, next_col] = True
+                        queue.append((next_row, next_col))
+
+            region_count += 1
+            largest_region = max(largest_region, region_size)
+
+    return largest_region, region_count
+
+
+def heuristic_board_score(grid, hand, available):
+    valid_actions_after = len(valid_actions_for_state(grid, hand, available))
+    rows = grid.sum(axis=1)
+    cols = grid.sum(axis=0)
+    line_potential = float(np.sum((rows / GRID_SIZE) ** 3) + np.sum((cols / GRID_SIZE) ** 3))
+    largest_empty_region, empty_regions = empty_region_stats(grid)
+    filled_cells = int(grid.sum())
+
+    return (
+        valid_actions_after * 0.65
+        + line_potential * 5.0
+        + largest_empty_region * 0.25
+        - empty_regions * 0.5
+        - max(filled_cells - int(BOARD_CELLS * 0.6875), 0) * 0.4
+    )
+
+
+def heuristic_evaluate_action(grid, hand, available, action):
+    hand_idx, row, col = decode_action(action)
+    block = hand[hand_idx]
+    next_grid, lines_cleared = apply_action_to_grid(grid, block, row, col)
+    next_available = list(available)
+    next_available[hand_idx] = False
+    stage_completed = not any(next_available)
+
+    contact_ratio = contact_ratio_on_grid(grid, block, row, col)
+    contact_bonus = max(contact_ratio - 0.40, 0.0) * 28.0
+    contact_penalty = max(0.40 - contact_ratio, 0.0) * 18.0
+    valid_actions_after = len(valid_actions_for_state(next_grid, hand, next_available))
+    no_move_penalty = 160.0 if (not stage_completed and valid_actions_after == 0) else 0.0
+
+    score = (
+        lines_cleared * 60.0
+        + (lines_cleared ** 2) * 25.0
+        + contact_bonus
+        - contact_penalty
+        + heuristic_board_score(next_grid, hand, next_available)
+        + (8.0 if stage_completed else 0.0)
+        - no_move_penalty
+    )
+
+    return {
+        "score": score,
+        "lines_cleared": lines_cleared,
+        "contact_ratio": contact_ratio,
+        "valid_actions_after": valid_actions_after,
+    }
+
+
+def choose_heuristic_action(raw_env):
+    grid = raw_env.game.grid
+    hand = raw_env.game.hand
+    available = raw_env.game.available
+    actions = valid_actions_for_state(grid, hand, available)
+    if not actions:
+        return None, None
+
+    ranked = []
+    for action in actions:
+        result = heuristic_evaluate_action(grid, hand, available, action)
+        ranked.append((result["score"], action, result))
+
+    ranked.sort(reverse=True, key=lambda item: item[0])
+    best_score, best_action, best_result = ranked[0]
+    best_result["score"] = best_score
+    return best_action, best_result
+
+
+def heuristic_step(obs, raw_env, env):
+    action, decision = choose_heuristic_action(raw_env)
+    if action is None:
+        return obs, True, "No valid heuristic moves available."
+
+    hand_idx, row, col = decode_action(action)
+    next_obs, reward, done, _, _ = env.step(action)
+    msg = (
+        f"Heuristic placed slot {hand_idx + 1} at R{row} C{col} | "
+        f"score {decision['score']:.1f} | contact {decision['contact_ratio']:.2f} | reward {reward:.1f}"
+    )
+    return next_obs, done, msg
+
+
+class ArenaWidget(QWidget):
+    def __init__(self, model, args):
+        super().__init__()
+        self.model = model
+        self.args = args
+
+        self.setWindowTitle("Block Blast Arena - PySide6")
+        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMouseTracking(True)
+
+        font_family = choose_font_family()
+        self.title_font = QFont(font_family, 30, QFont.Bold)
+        self.subtitle_font = QFont(font_family, 20, QFont.Bold)
+        self.body_font = QFont(font_family, 14)
+        self.button_font = QFont(font_family, 16, QFont.Bold)
+
+        self.scene = "menu"
+        self.mouse_pos = (0, 0)
+        self.reset_drag_state()
+
+        self.last_error = ""
+        self.model_catalog = discover_models()
+        self.model_status = "Model loaded: " + model_display_name(args.model_path) if model is not None else "No PPO model loaded."
+        self.model_combo = QComboBox(self)
+        self.model_combo.setFont(QFont(font_family, 12))
+        self.model_combo.setGeometry(840, 646, 700, 38)
+        self.model_combo.currentIndexChanged.connect(self.handle_model_selection)
+        self.populate_model_combo()
+
+        self.init_menu_scene()
+
+        self.loop_timer = QTimer(self)
+        self.loop_timer.setInterval(int(1000 / FPS))
+        self.loop_timer.timeout.connect(self.on_tick)
+        self.loop_timer.start()
+
+    def populate_model_combo(self):
+        self.model_combo.blockSignals(True)
+        self.model_combo.clear()
+        self.model_combo.addItem("No PPO model (heuristic/manual only)", None)
+        current_path = os.path.normpath(self.args.model_path) if getattr(self.args, "model_path", None) else ""
+        selected_index = 0
+
+        for model_info in self.model_catalog:
+            label = (
+                f"{model_info['name']} | {model_info['board_size']}x{model_info['board_size']} | "
+                f"mean {model_info['mean_stage']} | max {model_info['max_stage']}"
+            )
+            self.model_combo.addItem(label, model_info)
+            if os.path.normpath(model_info["path"]) == current_path:
+                selected_index = self.model_combo.count() - 1
+
+        self.model_combo.setCurrentIndex(selected_index)
+        self.model_combo.blockSignals(False)
+
+    def handle_model_selection(self, index):
+        if index < 0:
+            return
+
+        model_info = self.model_combo.itemData(index)
+        if model_info is None:
+            self.model = None
+            self.args.model_path = None
+            self.model_status = "No PPO model loaded. Heuristic and manual modes are available."
+            self.init_menu_scene()
+            self.update()
+            return
+
+        self.args.model_path = model_info["path"]
+        self.args.board_size = model_info["board_size"]
+        self.args.shape_pool = model_info["shape_pool"]
+        self.args.hand_generator = model_info["hand_generator"]
+        configure_board_mode(self.args.board_size)
+
+        try:
+            _raw, env, _obs = create_env_bundle(self.args)
+            self.model = load_model(env, self.args.model_path)
+            self.last_error = ""
+            self.model_status = (
+                f"Loaded {model_info['name']} | board {self.args.board_size}x{self.args.board_size} | "
+                f"mean {model_info['mean_stage']} | max {model_info['max_stage']}"
+            )
+        except Exception as exc:
+            self.model = None
+            self.last_error = f"Could not load selected model: {exc}"
+            self.model_status = "Selected model failed to load. Heuristic/manual modes still work."
+            traceback.print_exc()
+
+        self.init_menu_scene()
+        self.update()
+
+    def init_menu_scene(self):
+        self.scene = "menu"
+        base_x = 118
+        base_y = 232
+        gap = MENU_BTN_H + MENU_BTN_GAP
+        self.menu_buttons = [
+            make_button(QRect(base_x, base_y + index * gap, MENU_BTN_W, MENU_BTN_H), label, accent, key)
+            for index, (key, label, accent) in enumerate(
+                [
+                    ("solver", "Let AI solve your position", HUMAN),
+                    ("watch", "Watch AI play a game", AI),
+                    ("heuristic", "Watch heuristic play", WARN),
+                    ("versus", "You vs the AI", (175, 121, 255)),
+                ]
+            )
+        ]
+        self.menu_status = "Choose AI, heuristic, or a manual comparison mode."
+
+    def init_solver_scene(self):
+        self.scene = "solver"
+        self.solver_raw, self.solver_env, self.solver_obs = create_env_bundle(self.args)
+        self.solver_edit_grid = self.solver_raw.game.grid.copy()
+        self.solver_edit_hand_keys = [shape_key_from_matrix(block) for block in self.solver_raw.game.hand]
+        self.solver_solving = False
+        self.solver_done = False
+        self.solver_status = "Edit board + hand, then click Start AI Solve."
+        self.solver_last_step_time = time.time()
+        self.solver_buttons = {
+            "start": QRect(644, 240, 250, 52),
+            "reset": QRect(916, 240, 250, 52),
+            "back": QRect(1188, 240, 250, 52),
+        }
+
+    def init_watch_scene(self, policy="ai"):
+        self.scene = "watch"
+        self.watch_policy = policy
+        self.watch_raw, self.watch_env, self.watch_obs = create_env_bundle(self.args)
+        self.watch_done = False
+        self.watch_status = "Heuristic is playing this random run." if policy == "heuristic" else "AI is playing this random run."
+        self.watch_last_step_time = 0.0
+        self.watch_buttons = {
+            "new": QRect(642, 182, 270, 50),
+            "back": QRect(642, 246, 270, 50),
+        }
+
+    def init_versus_scene(self):
+        self.scene = "versus"
+        self.vs_h_raw, self.vs_h_env, self.vs_h_obs = create_env_bundle(self.args)
+        self.vs_a_raw, self.vs_a_env, self.vs_a_obs = create_env_bundle(self.args)
+
+        initial_state = capture_game_state(self.vs_h_raw.game)
+        restore_game_state(self.vs_a_raw.game, initial_state)
+        self.vs_a_obs = self.vs_a_raw._get_obs()
+
+        self.vs_h_done = False
+        self.vs_a_done = False
+        self.vs_locked = False
+        self.vs_winner = None
+        self.vs_status = "Drag a piece from your hand and drop it on your board."
+
+        self.reset_drag_state()
+
+        self.vs_buttons = {
+            "new": QRect(1220, 182, 340, 50),
+            "back": QRect(1220, 246, 340, 50),
+        }
+
+    def on_tick(self):
+        try:
+            now = time.time()
+
+            if self.drag_active:
+                vx, vy = self.drag_visual_pos
+                tx, ty = self.drag_target_pos
+                self.drag_visual_pos = (vx + (tx - vx) * 0.42, vy + (ty - vy) * 0.42)
+
+            if self.scene == "solver" and self.solver_solving and (not self.solver_done):
+                if now - self.solver_last_step_time >= self.args.ai_interval:
+                    self.solver_obs, self.solver_done, msg = ai_step(
+                        self.model,
+                        self.solver_obs,
+                        self.solver_raw,
+                        self.solver_env,
+                    )
+                    self.solver_status = msg
+                    self.solver_last_step_time = now
+                    if self.solver_done:
+                        self.solver_status = f"AI solve finished at stage {self.solver_raw.game.stages_passed}."
+
+            if self.scene == "watch" and (not self.watch_done):
+                if now - self.watch_last_step_time >= self.args.ai_interval:
+                    if self.watch_policy == "heuristic":
+                        self.watch_obs, self.watch_done, msg = heuristic_step(
+                            self.watch_obs,
+                            self.watch_raw,
+                            self.watch_env,
+                        )
+                    else:
+                        self.watch_obs, self.watch_done, msg = ai_step(
+                            self.model,
+                            self.watch_obs,
+                            self.watch_raw,
+                            self.watch_env,
+                        )
+                    self.watch_status = msg
+                    self.watch_last_step_time = now
+                    if self.watch_done:
+                        actor = "Heuristic" if self.watch_policy == "heuristic" else "AI"
+                        self.watch_status = f"{actor} game ended at stage {self.watch_raw.game.stages_passed}."
+
+        except Exception as exc:
+            self.last_error = f"Runtime error: {exc}"
+            traceback.print_exc()
+            if self.scene == "solver":
+                self.solver_solving = False
+                self.solver_done = True
+                self.solver_status = self.last_error
+            elif self.scene == "watch":
+                self.watch_done = True
+                self.watch_status = self.last_error
+            elif self.scene == "versus":
+                self.vs_locked = True
+                self.vs_status = self.last_error
+
+        self.update()
+
+    def reset_drag_state(self):
+        self.drag_active = False
+        self.drag_slot = None
+        self.drag_offset_cell = (0, 0)
+        self.drag_visual_pos = (0.0, 0.0)
+        self.drag_target_pos = (0.0, 0.0)
+
+    def paintEvent(self, _event):
+        self.model_combo.setVisible(self.scene == "menu")
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        self.draw_background(painter)
+
+        if self.scene == "menu":
+            self.draw_menu_scene(painter)
+        elif self.scene == "solver":
+            self.draw_solver_scene(painter)
+        elif self.scene == "watch":
+            self.draw_watch_scene(painter)
+        elif self.scene == "versus":
+            self.draw_versus_scene(painter)
+
+        painter.end()
+
+    def mouseMoveEvent(self, event):
+        self.mouse_pos = (event.position().x(), event.position().y())
+        if self.drag_active:
+            self.drag_target_pos = self.mouse_pos
+
+    def mousePressEvent(self, event):
+        pos = (event.position().x(), event.position().y())
+
+        try:
+            if self.scene == "menu":
+                self.handle_menu_click(pos)
+                return
+
+            if self.scene == "solver":
+                self.handle_solver_click(pos, event.button())
+                return
+
+            if self.scene == "watch":
+                self.handle_watch_click(pos, event.button())
+                return
+
+            if self.scene == "versus":
+                self.handle_versus_mouse_press(pos, event.button())
+                return
+        except Exception as exc:
+            self.last_error = f"Input error: {exc}"
+            traceback.print_exc()
+            if self.scene == "versus":
+                self.vs_status = self.last_error
+
+    def mouseReleaseEvent(self, event):
+        if self.scene != "versus":
+            return
+
+        if event.button() != Qt.LeftButton:
+            return
+
+        if not self.drag_active or self.drag_slot is None:
+            return
+
+        try:
+            mouse_pos = (event.position().x(), event.position().y())
+            slot = self.drag_slot
+            block = self.vs_h_raw.game.hand[slot]
+            drop = point_to_cell(mouse_pos, DUAL_BOARD_X_LEFT, DUAL_BOARD_Y, DUAL_CELL)
+
+            if drop is not None:
+                drop_row, drop_col = drop
+                anchor_row = drop_row - self.drag_offset_cell[0]
+                anchor_col = drop_col - self.drag_offset_cell[1]
+                self.try_human_drop(slot, anchor_row, anchor_col)
+        finally:
+            self.reset_drag_state()
+
+    def handle_menu_click(self, pos):
+        p = QPoint(int(pos[0]), int(pos[1]))
+        for btn in self.menu_buttons:
+            if btn["rect"].contains(p):
+                if btn["key"] == "solver":
+                    self.init_solver_scene()
+                elif btn["key"] == "watch":
+                    self.init_watch_scene()
+                elif btn["key"] == "heuristic":
+                    self.init_watch_scene(policy="heuristic")
+                elif btn["key"] == "versus":
+                    self.init_versus_scene()
+                return
+
+    def handle_solver_click(self, pos, button):
+        p = QPoint(int(pos[0]), int(pos[1]))
+
+        if button == Qt.LeftButton:
+            if self.solver_buttons["start"].contains(p):
+                self.apply_solver_setup()
+                return
+            if self.solver_buttons["reset"].contains(p):
+                self.init_solver_scene()
+                return
+            if self.solver_buttons["back"].contains(p):
+                self.init_menu_scene()
+                return
+
+        if self.solver_solving:
+            return
+
+        if button == Qt.LeftButton:
+            cell = point_to_cell(pos, SINGLE_BOARD_X, SINGLE_BOARD_Y, SINGLE_CELL)
+            if cell is not None:
+                r, c = cell
+                self.solver_edit_grid[r, c] = 0 if self.solver_edit_grid[r, c] == 1 else 1
+                return
+
+        slots = get_hand_slot_rects(SINGLE_BOARD_X + 4, SINGLE_BOARD_Y + SINGLE_BOARD_SIZE + 56)
+        for i, rect in enumerate(slots):
+            if rect.contains(p):
+                current = self.solver_edit_hand_keys[i]
+                idx = SHAPE_KEYS.index(current)
+                if button == Qt.LeftButton:
+                    self.solver_edit_hand_keys[i] = SHAPE_KEYS[(idx + 1) % len(SHAPE_KEYS)]
+                elif button == Qt.RightButton:
+                    self.solver_edit_hand_keys[i] = SHAPE_KEYS[(idx - 1) % len(SHAPE_KEYS)]
+                return
+
+    def handle_watch_click(self, pos, button):
+        if button != Qt.LeftButton:
+            return
+
+        p = QPoint(int(pos[0]), int(pos[1]))
+        if self.watch_buttons["new"].contains(p):
+            self.init_watch_scene(policy=self.watch_policy)
+            return
+        if self.watch_buttons["back"].contains(p):
+            self.init_menu_scene()
+            return
+
+    def handle_versus_mouse_press(self, pos, button):
+        if button != Qt.LeftButton:
+            return
+
+        p = QPoint(int(pos[0]), int(pos[1]))
+
+        if self.vs_buttons["new"].contains(p):
+            self.init_versus_scene()
+            return
+        if self.vs_buttons["back"].contains(p):
+            self.init_menu_scene()
+            return
+
+        if self.vs_locked or self.vs_h_done:
+            return
+
+        slots = get_hand_slot_rects(DUAL_BOARD_X_LEFT, DUAL_BOARD_Y + DUAL_BOARD_SIZE + 50)
+        for idx, rect in enumerate(slots):
+            if rect.contains(p) and self.vs_h_raw.game.available[idx]:
+                block = self.vs_h_raw.game.hand[idx]
+                offset = self.drag_offset_from_click(rect, block, pos)
+                if offset is None:
+                    self.vs_status = "Grab one highlighted cell of the shape to drag it."
+                    return
+
+                self.drag_active = True
+                self.drag_slot = idx
+                self.drag_offset_cell = offset
+                self.drag_target_pos = pos
+                self.drag_visual_pos = pos
+                return
+
+    def drag_offset_from_click(self, slot_rect, block, pos):
+        lx = pos[0] - (slot_rect.x() + HAND_BLOCK_OFFSET_X)
+        ly = pos[1] - (slot_rect.y() + HAND_BLOCK_OFFSET_Y)
+
+        fx = lx / max(1.0, float(MINI_CELL))
+        fy = ly / max(1.0, float(MINI_CELL))
+
+        occupied = []
+        for r in range(block.shape[0]):
+            for c in range(block.shape[1]):
+                if block[r, c] == 1:
+                    occupied.append((r, c))
+
+        if not occupied:
+            return None
+
+        best = None
+        best_dist = None
+        for r, c in occupied:
+            dist = (fy - (r + 0.5)) ** 2 + (fx - (c + 0.5)) ** 2
+            if best_dist is None or dist < best_dist:
+                best_dist = dist
+                best = (r, c)
+        return best
+
+    def apply_solver_setup(self):
+        self.solver_raw.game.grid = self.solver_edit_grid.copy()
+        self.solver_raw.game.hand = [SHAPE_LIBRARY[key].copy() for key in self.solver_edit_hand_keys]
+        self.solver_raw.game.available = [True, True, True]
+        self.solver_raw.game.stages_passed = 0
+        self.solver_raw.game.lines_destroyed = 0
+        self.solver_raw.game.blocks_placed = 0
+
+        self.solver_obs = self.solver_raw._get_obs()
+        self.solver_done = self.solver_raw.game.check_game_over()
+        self.solver_solving = True
+        self.solver_last_step_time = time.time()
+        if self.solver_done:
+            self.solver_status = "Setup has no legal moves."
+        else:
+            self.solver_status = "AI started solving your setup."
+
+    def try_human_drop(self, slot_idx, anchor_row, anchor_col):
+        game = self.vs_h_raw.game
+        if not game.available[slot_idx]:
+            self.vs_status = f"Slot {slot_idx + 1} is not available."
+            return
+
+        block = game.hand[slot_idx]
+        if not game.can_place(block, anchor_row, anchor_col):
+            self.vs_status = "Invalid placement."
+            return
+
+        action = action_from_selection(slot_idx, anchor_row, anchor_col)
+        self.vs_h_obs, reward, self.vs_h_done, _, _ = self.vs_h_env.step(action)
+        self.vs_status = f"You placed slot {slot_idx + 1} at R{anchor_row} C{anchor_col} | reward {reward:.1f}"
+
+        self.ai_reply_in_versus()
+        self.sync_vs_hands_when_stage_refreshes()
+        self.resolve_versus_winner()
+
+    def ai_reply_in_versus(self):
+        if self.vs_a_done:
+            return
+        self.vs_a_obs, self.vs_a_done, self.vs_status = ai_step(
+            self.model,
+            self.vs_a_obs,
+            self.vs_a_raw,
+            self.vs_a_env,
+        )
+
+    def sync_vs_hands_when_stage_refreshes(self):
+        h_game = self.vs_h_raw.game
+        a_game = self.vs_a_raw.game
+
+        if all(h_game.available) and all(a_game.available):
+            a_game.hand = [block.copy() for block in h_game.hand]
+            a_game.available = [True, True, True]
+            self.vs_a_obs = self.vs_a_raw._get_obs()
+
+    def resolve_versus_winner(self):
+        if self.vs_winner is not None:
+            return
+
+        if (not self.vs_h_done) and (not self.vs_a_done):
+            return
+
+        if self.vs_h_done and (not self.vs_a_done):
+            self.vs_winner = "AI wins (you ran out of moves first)."
+        elif self.vs_a_done and (not self.vs_h_done):
+            self.vs_winner = "You win (AI ran out of moves first)."
+        else:
+            h_stage = self.vs_h_raw.game.stages_passed
+            a_stage = self.vs_a_raw.game.stages_passed
+            if h_stage > a_stage:
+                self.vs_winner = "You win on stages."
+            elif a_stage > h_stage:
+                self.vs_winner = "AI wins on stages."
+            else:
+                h_lines = self.vs_h_raw.game.lines_destroyed
+                a_lines = self.vs_a_raw.game.lines_destroyed
+                if h_lines > a_lines:
+                    self.vs_winner = "You win on cleared lines."
+                elif a_lines > h_lines:
+                    self.vs_winner = "AI wins on cleared lines."
+                else:
+                    self.vs_winner = "Draw."
+
+        self.vs_locked = True
+        self.vs_status = self.vs_winner
+
+    def draw_background(self, painter):
+        painter.fillRect(self.rect(), to_color(BG))
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(to_color((61, 112, 202), 84))
+        painter.drawEllipse(60, -120, 520, 420)
+        painter.setBrush(to_color((127, 228, 171), 62))
+        painter.drawEllipse(1200, -80, 430, 360)
+        painter.setBrush(to_color((255, 183, 102), 48))
+        painter.drawEllipse(1280, 660, 340, 260)
+
+    def draw_rounded_block(self, painter, rect, fill, radius=16, border=None, border_width=1):
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(fill)
+        painter.drawRoundedRect(rect, radius, radius)
+        if border is not None:
+            pen = QPen(border)
+            pen.setWidth(border_width)
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(rect, radius, radius)
+
+    def draw_label(self, painter, text, x, y, color, font):
+        painter.setPen(color)
+        painter.setFont(font)
+        painter.drawText(x, y, text)
+
+    def draw_metric_card(self, painter, rect, title, value, accent):
+        self.draw_rounded_block(
+            painter,
+            rect,
+            to_color(PANEL_2),
+            radius=14,
+            border=to_color(accent),
+            border_width=1,
+        )
+        self.draw_label(painter, title, rect.x() + 12, rect.y() + 24, to_color(MUTED), self.body_font)
+        self.draw_label(painter, value, rect.x() + 12, rect.y() + 56, to_color(TEXT), self.subtitle_font)
+
+    def draw_game_metrics(self, painter, game, x, y, done=None):
+        cards = [
+            ("Stages", str(game.stages_passed), HUMAN),
+            ("Lines", str(game.lines_destroyed), AI),
+            ("Blocks", str(game.blocks_placed), WARN),
+        ]
+        if done is not None:
+            cards.append(("State", "DONE" if done else "LIVE", BAD if done else GOOD))
+
+        for index, (title, value, accent) in enumerate(cards):
+            self.draw_metric_card(painter, QRect(x + index * 202, y, 188, 74), title, value, accent)
+
+    def draw_button(self, painter, button):
+        hovered = button["rect"].contains(QPoint(int(self.mouse_pos[0]), int(self.mouse_pos[1])))
+        fill = to_color(button["accent"] if hovered else PANEL_2)
+        border = to_color(WHITE if hovered else (74, 92, 126))
+        self.draw_rounded_block(painter, button["rect"], fill, radius=16, border=border, border_width=1)
+
+        painter.setPen(to_color(WHITE))
+        painter.setFont(self.button_font)
+        painter.drawText(button["rect"], Qt.AlignCenter, button["label"])
+
+    def draw_board(self, painter, grid, board_x, board_y, cell_size, title, accent, ghost_cells=None, ghost_valid=True):
+        outer = QRect(board_x - 18, board_y - 18, GRID_SIZE * cell_size + 36, GRID_SIZE * cell_size + 36)
+        inner = QRect(board_x - 6, board_y - 6, GRID_SIZE * cell_size + 12, GRID_SIZE * cell_size + 12)
+        self.draw_rounded_block(
+            painter,
+            outer,
+            to_color(PANEL),
+            radius=22,
+            border=to_color((74, 92, 126)),
+            border_width=1,
+        )
+        self.draw_rounded_block(painter, inner, to_color(BOARD_BG), radius=18)
+
+        ghost_set = set(ghost_cells or [])
+        for row in range(GRID_SIZE):
+            for col in range(GRID_SIZE):
+                cell = QRect(
+                    int(board_x + col * cell_size),
+                    int(board_y + row * cell_size),
+                    int(cell_size - 3),
+                    int(cell_size - 3),
+                )
+                occupied = grid[row, col] == 1
+                self.draw_rounded_block(
+                    painter,
+                    cell,
+                    to_color(CELL_FILL if occupied else CELL_BG),
+                    radius=8,
+                )
+
+                if occupied:
+                    shadow = QRect(cell.x(), cell.y() + cell.height() - 5, cell.width(), 4)
+                    self.draw_rounded_block(painter, shadow, to_color(CELL_SHADOW), radius=5)
+
+                if (row, col) in ghost_set:
+                    ghost_color = to_color(GHOST_VALID if ghost_valid else GHOST_INVALID, 150)
+                    self.draw_rounded_block(painter, cell, ghost_color, radius=8)
+
+        self.draw_label(painter, title, board_x, board_y - 44, to_color(accent), self.subtitle_font)
+        self.draw_label(painter, f"{GRID_SIZE} x {GRID_SIZE}", board_x + 180, board_y - 44, to_color(MUTED), self.body_font)
+
+    def draw_hand(self, painter, hand, available, slot_rects, title, accent, selected_slot=None, key_labels=None):
+        self.draw_label(painter, title, slot_rects[0].x(), slot_rects[0].y() - 36, to_color(TEXT), self.subtitle_font)
+
+        for idx, rect in enumerate(slot_rects):
+            selected = selected_slot == idx
+            border_color = to_color(accent if selected else (75, 92, 123))
+
+            self.draw_rounded_block(
+                painter,
+                rect.adjusted(-6, -6, 6, 6),
+                to_color(PANEL_2),
+                radius=16,
+                border=border_color,
+                border_width=2 if selected else 1,
+            )
+            self.draw_rounded_block(painter, rect, to_color((26, 39, 68)), radius=12)
+
+            block = hand[idx]
+            for r in range(block.shape[0]):
+                for c in range(block.shape[1]):
+                    if block[r, c] != 1:
+                        continue
+                    bx = rect.x() + HAND_BLOCK_OFFSET_X + c * MINI_CELL
+                    by = rect.y() + HAND_BLOCK_OFFSET_Y + r * MINI_CELL
+                    brect = QRect(int(bx), int(by), MINI_CELL - 2, MINI_CELL - 2)
+                    fill = to_color(CELL_FILL if available[idx] else DIM)
+                    sh = to_color(CELL_SHADOW if available[idx] else (65, 73, 96))
+                    self.draw_rounded_block(painter, brect, fill, radius=6)
+                    shadow = QRect(brect.x(), brect.y() + brect.height() - 4, brect.width(), 3)
+                    self.draw_rounded_block(painter, shadow, sh, radius=4)
+
+            label = key_labels[idx] if key_labels is not None else f"Slot {idx + 1}"
+            self.draw_label(
+                painter,
+                label,
+                rect.x() + 8,
+                rect.y() - 12,
+                to_color(accent if selected else MUTED),
+                self.body_font,
+            )
+
+    def draw_menu_scene(self, painter):
+        self.draw_label(painter, "Block Blast Arena", 86, 72, to_color(TEXT), self.title_font)
+        self.draw_label(painter, "Choose a model, then choose one mode to start", 90, 110, to_color(MUTED), self.subtitle_font)
+
+        left_panel = QRect(80, 150, 700, 690)
+        right_panel = QRect(812, 150, 790, 690)
+
+        self.draw_rounded_block(
+            painter,
+            left_panel,
+            to_color(PANEL),
+            radius=24,
+            border=to_color((78, 96, 128)),
+            border_width=1,
+        )
+        self.draw_rounded_block(
+            painter,
+            right_panel,
+            to_color(PANEL),
+            radius=24,
+            border=to_color((78, 96, 128)),
+            border_width=1,
+        )
+
+        for button in self.menu_buttons:
+            self.draw_button(painter, button)
+
+        self.draw_label(painter, self.menu_status, 96, 650, to_color(MUTED), self.body_font)
+        self.draw_label(painter, self.model_status, 96, 690, to_color(AI if self.model is not None else WARN), self.body_font)
+        self.draw_label(painter, f"Current board: {self.args.board_size} x {self.args.board_size}", 96, 724, to_color(MUTED), self.body_font)
+        self.draw_label(painter, f"Generator: {self.args.hand_generator} | pool: {self.args.shape_pool}", 96, 758, to_color(MUTED), self.body_font)
+
+        self.draw_label(painter, "Modes", 840, 202, to_color(TEXT), self.subtitle_font)
+        mode_lines = [
+            ("1. Let AI solve your position", "Build a board and hand, then let the loaded model continue.", HUMAN),
+            ("2. Watch AI play a game", "Autoplay with the selected PPO model.", AI),
+            ("3. Watch heuristic play", "Scores every legal move and always picks the best one.", WARN),
+            ("4. You vs the AI", "Split boards. Your valid drop triggers one AI move.", (175, 121, 255)),
+        ]
+        for index, (title, detail, accent) in enumerate(mode_lines):
+            y = 250 + index * 84
+            self.draw_label(painter, title, 840, y, to_color(accent), self.subtitle_font)
+            self.draw_label(painter, detail, 840, y + 30, to_color(MUTED), self.body_font)
+
+        self.draw_label(painter, "Model selector", 840, 612, to_color(TEXT), self.subtitle_font)
+        self.draw_label(painter, "Metrics are shown as mean/max stages when local data is known.", 840, 714, to_color(MUTED), self.body_font)
+
+        if self.last_error:
+            self.draw_label(painter, self.last_error[:90], 840, 760, to_color(BAD), self.body_font)
+
+    def draw_solver_scene(self, painter):
+        right_panel = QRect(622, 130, 968, 692)
+        self.draw_rounded_block(
+            painter,
+            right_panel,
+            to_color(PANEL),
+            radius=24,
+            border=to_color((78, 96, 128)),
+            border_width=1,
+        )
+
+        board_grid = self.solver_raw.game.grid if self.solver_solving else self.solver_edit_grid
+        self.draw_board(
+            painter,
+            board_grid,
+            SINGLE_BOARD_X,
+            SINGLE_BOARD_Y,
+            SINGLE_CELL,
+            "Custom Position",
+            HUMAN,
+        )
+
+        slots = get_hand_slot_rects(SINGLE_BOARD_X + 6, SINGLE_BOARD_Y + SINGLE_BOARD_SIZE + 56)
+        if self.solver_solving:
+            hand = self.solver_raw.game.hand
+            available = self.solver_raw.game.available
+            labels = [f"Slot {i + 1}" for i in range(HAND_SIZE)]
+        else:
+            hand = [SHAPE_LIBRARY[k] for k in self.solver_edit_hand_keys]
+            available = [True, True, True]
+            labels = self.solver_edit_hand_keys
+
+        self.draw_hand(
+            painter,
+            hand,
+            available,
+            slots,
+            "Hand",
+            HUMAN,
+            selected_slot=None,
+            key_labels=labels,
+        )
+
+        self.draw_label(painter, "Let AI Solve Your Position", 644, 168, to_color(TEXT), self.title_font)
+        self.draw_label(painter, self.solver_status, 644, 208, to_color(MUTED), self.body_font)
+
+        button_specs = {
+            "start": ("Start AI Solve", AI),
+            "reset": ("Reset Editor", WARN),
+            "back": ("Back To Menu", BAD),
+        }
+        for key, rect in self.solver_buttons.items():
+            label, accent = button_specs[key]
+            self.draw_button(painter, make_button(rect, label, accent))
+
+        self.draw_game_metrics(painter, self.solver_raw.game, 644, 334, done=self.solver_done)
+
+        if not self.solver_solving:
+            self.draw_label(painter, "Editor controls:", 644, 494, to_color(TEXT), self.subtitle_font)
+            self.draw_label(painter, "- Left click board cell: toggle filled / empty", 644, 528, to_color(MUTED), self.body_font)
+            self.draw_label(painter, "- Left click hand slot: next shape", 644, 556, to_color(MUTED), self.body_font)
+            self.draw_label(painter, "- Right click hand slot: previous shape", 644, 584, to_color(MUTED), self.body_font)
+
+    def draw_watch_scene(self, painter):
+        right_panel = QRect(622, 130, 968, 692)
+        self.draw_rounded_block(
+            painter,
+            right_panel,
+            to_color(PANEL),
+            radius=24,
+            border=to_color((78, 96, 128)),
+            border_width=1,
+        )
+
+        title = "Heuristic Board" if self.watch_policy == "heuristic" else "AI Board"
+        accent = WARN if self.watch_policy == "heuristic" else AI
+        self.draw_board(
+            painter,
+            self.watch_raw.game.grid,
+            SINGLE_BOARD_X,
+            SINGLE_BOARD_Y,
+            SINGLE_CELL,
+            title,
+            accent,
+        )
+
+        slots = get_hand_slot_rects(SINGLE_BOARD_X + 6, SINGLE_BOARD_Y + SINGLE_BOARD_SIZE + 56)
+        self.draw_hand(
+            painter,
+            self.watch_raw.game.hand,
+            self.watch_raw.game.available,
+            slots,
+            "Heuristic Hand" if self.watch_policy == "heuristic" else "AI Hand",
+            accent,
+        )
+
+        self.draw_label(painter, "Watch Heuristic Play" if self.watch_policy == "heuristic" else "Watch AI Play", 644, 168, to_color(TEXT), self.title_font)
+        self.draw_label(painter, self.watch_status, 644, 208, to_color(MUTED), self.body_font)
+
+        self.draw_button(painter, make_button(self.watch_buttons["new"], "New Random Game", WARN))
+        self.draw_button(painter, make_button(self.watch_buttons["back"], "Back To Menu", BAD))
+        self.draw_game_metrics(painter, self.watch_raw.game, 644, 322, done=self.watch_done)
+
+    def current_drag_anchor(self):
+        if (not self.drag_active) or self.drag_slot is None:
+            return None
+
+        block = self.vs_h_raw.game.hand[self.drag_slot]
+        cell = point_to_cell(self.mouse_pos, DUAL_BOARD_X_LEFT, DUAL_BOARD_Y, DUAL_CELL)
+        if cell is None:
+            return None
+
+        row, col = cell
+        anchor_row = row - self.drag_offset_cell[0]
+        anchor_col = col - self.drag_offset_cell[1]
+        valid = self.vs_h_raw.game.can_place(block, anchor_row, anchor_col)
+        return (anchor_row, anchor_col, valid)
+
+    def draw_drag_piece(self, painter):
+        if (not self.drag_active) or self.drag_slot is None:
+            return
+
+        block = self.vs_h_raw.game.hand[self.drag_slot]
+        anchor_preview = self.current_drag_anchor()
+        valid = anchor_preview is not None and anchor_preview[2]
+
+        if anchor_preview is not None:
+            anchor_row, anchor_col, _ = anchor_preview
+            top_left_x = int(DUAL_BOARD_X_LEFT + anchor_col * DUAL_CELL)
+            top_left_y = int(DUAL_BOARD_Y + anchor_row * DUAL_CELL)
+        else:
+            top_left_x = int(self.drag_visual_pos[0] - (self.drag_offset_cell[1] * DUAL_CELL))
+            top_left_y = int(self.drag_visual_pos[1] - (self.drag_offset_cell[0] * DUAL_CELL))
+
+        fill = to_color(GHOST_VALID if valid else GHOST_INVALID, 160)
+        for r in range(block.shape[0]):
+            for c in range(block.shape[1]):
+                if block[r, c] != 1:
+                    continue
+                rect = QRect(
+                    top_left_x + c * DUAL_CELL + 1,
+                    top_left_y + r * DUAL_CELL + 1,
+                    DUAL_CELL - 3,
+                    DUAL_CELL - 3,
+                )
+                self.draw_rounded_block(painter, rect, fill, radius=8)
+
+    def draw_versus_scene(self, painter):
+        side_panel = QRect(1204, 130, 396, 692)
+        self.draw_rounded_block(
+            painter,
+            side_panel,
+            to_color(PANEL),
+            radius=24,
+            border=to_color((78, 96, 128)),
+            border_width=1,
+        )
+
+        ghost_cells = None
+        ghost_valid = False
+        anchor = self.current_drag_anchor()
+        if anchor is not None and self.drag_slot is not None:
+            ar, ac, ghost_valid = anchor
+            block = self.vs_h_raw.game.hand[self.drag_slot]
+            ghost_cells = compute_block_cells(block, ar, ac)
+
+        self.draw_board(
+            painter,
+            self.vs_h_raw.game.grid,
+            DUAL_BOARD_X_LEFT,
+            DUAL_BOARD_Y,
+            DUAL_CELL,
+            "Your Board",
+            HUMAN,
+            ghost_cells=ghost_cells,
+            ghost_valid=ghost_valid,
+        )
+
+        self.draw_board(
+            painter,
+            self.vs_a_raw.game.grid,
+            DUAL_BOARD_X_RIGHT,
+            DUAL_BOARD_Y,
+            DUAL_CELL,
+            "AI Board",
+            AI,
+        )
+
+        human_slots = get_hand_slot_rects(DUAL_BOARD_X_LEFT, DUAL_BOARD_Y + DUAL_BOARD_SIZE + 50)
+        ai_slots = get_hand_slot_rects(DUAL_BOARD_X_RIGHT, DUAL_BOARD_Y + DUAL_BOARD_SIZE + 50)
+
+        self.draw_hand(
+            painter,
+            self.vs_h_raw.game.hand,
+            self.vs_h_raw.game.available,
+            human_slots,
+            "Your Hand (drag and drop)",
+            HUMAN,
+            selected_slot=self.drag_slot if self.drag_active else None,
+        )
+        self.draw_hand(
+            painter,
+            self.vs_a_raw.game.hand,
+            self.vs_a_raw.game.available,
+            ai_slots,
+            "AI Hand",
+            AI,
+        )
+
+        self.draw_label(painter, "You vs the AI", 1222, 168, to_color(TEXT), self.title_font)
+        self.draw_label(painter, self.vs_status, 1222, 208, to_color(MUTED), self.body_font)
+
+        self.draw_button(painter, make_button(self.vs_buttons["new"], "New Match", WARN))
+        self.draw_button(painter, make_button(self.vs_buttons["back"], "Back To Menu", BAD))
+
+        self.draw_label(painter, "You", 1222, 340, to_color(HUMAN), self.subtitle_font)
+        self.draw_metric_card(painter, QRect(1222, 356, 176, 68), "Stages", str(self.vs_h_raw.game.stages_passed), HUMAN)
+        self.draw_metric_card(painter, QRect(1408, 356, 176, 68), "Lines", str(self.vs_h_raw.game.lines_destroyed), HUMAN)
+        self.draw_metric_card(painter, QRect(1222, 432, 176, 68), "Blocks", str(self.vs_h_raw.game.blocks_placed), HUMAN)
+
+        self.draw_label(painter, "AI", 1222, 544, to_color(AI), self.subtitle_font)
+        self.draw_metric_card(painter, QRect(1222, 560, 176, 68), "Stages", str(self.vs_a_raw.game.stages_passed), AI)
+        self.draw_metric_card(painter, QRect(1408, 560, 176, 68), "Lines", str(self.vs_a_raw.game.lines_destroyed), AI)
+        self.draw_metric_card(painter, QRect(1222, 636, 176, 68), "Blocks", str(self.vs_a_raw.game.blocks_placed), AI)
+
+        if self.vs_winner is not None:
+            self.draw_label(painter, f"Result: {self.vs_winner}", 1222, 736, to_color(GOOD), self.subtitle_font)
+
+        self.draw_drag_piece(painter)
+
+
+def main():
+    args = parse_args()
+    args = resolve_watch_defaults(args)
+    configure_board_mode(args.board_size)
+
+    model = None
+    if not args.no_model:
+        bootstrap_raw, bootstrap_env, _ = create_env_bundle(args)
+        try:
+            model = load_model(bootstrap_env, args.model_path)
+        except FileNotFoundError:
+            print(f"Model not found: {args.model_path}.zip")
+            raise SystemExit(1)
+        except RuntimeError as exc:
+            print(str(exc))
+            raise SystemExit(1)
+
+        del bootstrap_raw
+
+    app = QApplication(sys.argv)
+    widget = ArenaWidget(model, args)
+    widget.show()
+    raise SystemExit(app.exec())
+
+
+if __name__ == "__main__":
+    main()
+
+---------
+Fisier: behavioral_cloning.py
+Descriere: Pipeline experimental pentru colectarea de date euristice si pre-antrenare supervizata.
+---------
+import os
+import time
+import numpy as np
+import torch
+from torch import nn
+from torch.utils.data import DataLoader, Dataset, Subset
+from torch.utils.tensorboard import SummaryWriter
+from env import ActionAwareCNNExtractor, BlockBlastEnv, CustomCNNExtractor, CustomCNNExtractorV2
+from sb3_contrib import MaskablePPO
+from sb3_contrib.common.wrappers import ActionMasker
+GRID_SIZE = 4
+DEFAULT_REWARD_CONFIG = {'placement_reward': 0.0, 'line_clear_scale': 28.0, 'line_clear_bonus': 1.5, 'stage_complete_reward': 0.0, 'no_line_penalty': 0.0, 'game_over_penalty': 90.0, 'game_over_early_weight': 0.0, 'contact_reward_scale': 24.0, 'contact_reward_power': 1.15, 'contact_reward_threshold': 0.4, 'contact_penalty_scale': 8.0, 'complexity_simple_prob': 0.78, 'complexity_medium_prob': 0.18, 'complexity_hard_prob': 0.04}
+
+def ensure_parent_dir(path):
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+
+def normalize_model_path(path):
+    if path.endswith('.zip'):
+        return path[:-4]
+    return path
+
+def mask_fn(env):
+    if hasattr(env, 'valid_action_mask'):
+        return env.valid_action_mask()
+    unwrapped = getattr(env, 'unwrapped', None)
+    if unwrapped is not None and hasattr(unwrapped, 'valid_action_mask'):
+        return unwrapped.valid_action_mask()
+    raise AttributeError('valid_action_mask() is not available on the current environment')
+
+def decode_action(action):
+    hand_idx = action // 16
+    remainder = action % 16
+    row = remainder // 4
+    col = remainder % 4
+    return (hand_idx, row, col)
+
+def action_from_selection(hand_index, row, col):
+    return hand_index * 16 + row * 4 + col
+
+def can_place_on_grid(grid, block, row, col):
+    block_h, block_w = block.shape
+    if row + block_h > GRID_SIZE or col + block_w > GRID_SIZE:
+        return False
+    target = grid[row:row + block_h, col:col + block_w]
+    return not np.any(np.logical_and(target, block))
+
+def valid_actions_for_state(grid, hand, available):
+    actions = []
+    for hand_idx, is_available in enumerate(available):
+        if not is_available:
+            continue
+        block = hand[hand_idx]
+        block_h, block_w = block.shape
+        for row in range(GRID_SIZE - block_h + 1):
+            for col in range(GRID_SIZE - block_w + 1):
+                if can_place_on_grid(grid, block, row, col):
+                    actions.append(action_from_selection(hand_idx, row, col))
+    return actions
+
+def apply_action_to_grid(grid, block, row, col):
+    next_grid = grid.copy()
+    block_h, block_w = block.shape
+    next_grid[row:row + block_h, col:col + block_w] += block
+    full_rows = list(np.where(np.all(next_grid == 1, axis=1))[0])
+    full_cols = list(np.where(np.all(next_grid == 1, axis=0))[0])
+    if full_rows:
+        next_grid[full_rows, :] = 0
+    if full_cols:
+        next_grid[:, full_cols] = 0
+    return (next_grid, len(full_rows) + len(full_cols))
+
+def contact_ratio_on_grid(previous_grid, block, row, col):
+    touching_edges = 0
+    external_edges = 0
+    block_h, block_w = block.shape
+    for block_row in range(block_h):
+        for block_col in range(block_w):
+            if block[block_row, block_col] == 0:
+                continue
+            board_row = row + block_row
+            board_col = col + block_col
+            for d_row, d_col in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                neighbor_block_row = block_row + d_row
+                neighbor_block_col = block_col + d_col
+                if 0 <= neighbor_block_row < block_h and 0 <= neighbor_block_col < block_w and (block[neighbor_block_row, neighbor_block_col] == 1):
+                    continue
+                external_edges += 1
+                neighbor_row = board_row + d_row
+                neighbor_col = board_col + d_col
+                if neighbor_row < 0 or neighbor_row >= GRID_SIZE or neighbor_col < 0 or (neighbor_col >= GRID_SIZE) or (previous_grid[neighbor_row, neighbor_col] == 1):
+                    touching_edges += 1
+    return 0.0 if external_edges == 0 else touching_edges / external_edges
+
+def empty_region_stats(grid):
+    visited = np.zeros_like(grid, dtype=bool)
+    largest_region = 0
+    region_count = 0
+    for row in range(GRID_SIZE):
+        for col in range(GRID_SIZE):
+            if grid[row, col] != 0 or visited[row, col]:
+                continue
+            queue = [(row, col)]
+            visited[row, col] = True
+            region_size = 0
+            while queue:
+                current_row, current_col = queue.pop()
+                region_size += 1
+                for d_row, d_col in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    next_row = current_row + d_row
+                    next_col = current_col + d_col
+                    if 0 <= next_row < GRID_SIZE and 0 <= next_col < GRID_SIZE and (not visited[next_row, next_col]) and (grid[next_row, next_col] == 0):
+                        visited[next_row, next_col] = True
+                        queue.append((next_row, next_col))
+            region_count += 1
+            largest_region = max(largest_region, region_size)
+    return (largest_region, region_count)
+
+def heuristic_board_score(grid, hand, available):
+    valid_actions_after = len(valid_actions_for_state(grid, hand, available))
+    rows = grid.sum(axis=1)
+    cols = grid.sum(axis=0)
+    line_potential = float(np.sum((rows / GRID_SIZE) ** 3) + np.sum((cols / GRID_SIZE) ** 3))
+    largest_empty_region, empty_regions = empty_region_stats(grid)
+    filled_cells = int(grid.sum())
+    return valid_actions_after * 0.65 + line_potential * 5.0 + largest_empty_region * 0.25 - empty_regions * 0.5 - max(filled_cells - 44, 0) * 0.4
+
+def heuristic_evaluate_action(grid, hand, available, action):
+    hand_idx, row, col = decode_action(action)
+    block = hand[hand_idx]
+    next_grid, lines_cleared = apply_action_to_grid(grid, block, row, col)
+    next_available = list(available)
+    next_available[hand_idx] = False
+    stage_completed = not any(next_available)
+    contact_ratio = contact_ratio_on_grid(grid, block, row, col)
+    contact_bonus = max(contact_ratio - 0.4, 0.0) * 28.0
+    contact_penalty = max(0.4 - contact_ratio, 0.0) * 18.0
+    valid_actions_after = len(valid_actions_for_state(next_grid, hand, next_available))
+    no_move_penalty = 160.0 if not stage_completed and valid_actions_after == 0 else 0.0
+    score = lines_cleared * 60.0 + lines_cleared ** 2 * 25.0 + contact_bonus - contact_penalty + heuristic_board_score(next_grid, hand, next_available) + (8.0 if stage_completed else 0.0) - no_move_penalty
+    return {'score': float(score), 'lines_cleared': float(lines_cleared), 'contact_ratio': float(contact_ratio), 'valid_actions_after': float(valid_actions_after)}
+
+def choose_heuristic_action(raw_env):
+    grid = raw_env.game.grid
+    hand = raw_env.game.hand
+    available = raw_env.game.available
+    actions = valid_actions_for_state(grid, hand, available)
+    if not actions:
+        return (None, None)
+    ranked = []
+    for action in actions:
+        result = heuristic_evaluate_action(grid, hand, available, action)
+        ranked.append((result['score'], action, result))
+    ranked.sort(reverse=True, key=lambda item: item[0])
+    best_score, best_action, best_result = ranked[0]
+    best_result['score'] = best_score
+    return (best_action, best_result)
+
+def build_reward_config(reward_config=None, shape_pool='all', hand_generator='adaptive_playable'):
+    merged = dict(DEFAULT_REWARD_CONFIG)
+    if reward_config:
+        merged.update(reward_config)
+    merged['shape_pool'] = shape_pool
+    merged['hand_generator'] = hand_generator
+    return merged
+
+def make_env(reward_config=None, shape_pool='all', hand_generator='adaptive_playable', fixed_game_seed=None):
+    resolved_reward_config = build_reward_config(reward_config, shape_pool=shape_pool, hand_generator=hand_generator)
+    env = BlockBlastEnv(reward_config=resolved_reward_config, apply_hole_penalty=bool(resolved_reward_config.get('apply_hole_penalty', False)), fixed_game_seed=fixed_game_seed, shape_pool=shape_pool, hand_generator=hand_generator)
+    return ActionMasker(env, mask_fn)
+
+def collect_expert_data(output_path, num_episodes, reward_config=None, shape_pool='all', hand_generator='adaptive_playable', fixed_game_seed=None, fixed_game_seeds=None, max_steps_per_episode=5000, base_reset_seed=10000):
+    archive_path = output_path if output_path.endswith('.npz') else f'{output_path}.npz'
+    print('[BC] collect_expert_data')
+    print(f'[BC] reading environment state from BlockBlastEnv with shape_pool={shape_pool}, hand_generator={hand_generator}')
+    print(f'[BC] expert actions come from the built-in heuristic in watch.py')
+    print(f'[BC] saving expert dataset to: {archive_path}')
+    print(f'[BC] planned episodes: {num_episodes}, max_steps_per_episode: {max_steps_per_episode}')
+    raw_env = BlockBlastEnv(reward_config=build_reward_config(reward_config, shape_pool=shape_pool, hand_generator=hand_generator), apply_hole_penalty=bool((reward_config or {}).get('apply_hole_penalty', False)), fixed_game_seed=fixed_game_seed, shape_pool=shape_pool, hand_generator=hand_generator)
+    env = ActionMasker(raw_env, mask_fn)
+    boards = []
+    valid_actions_list = []
+    hands = []
+    available_list = []
+    actions = []
+    collection_start = time.perf_counter()
+    progress_every = max(1, num_episodes // 20)
+    try:
+        for episode_idx in range(num_episodes):
+            episode_start = time.perf_counter()
+            if fixed_game_seeds:
+                raw_env.fixed_game_seed = fixed_game_seeds[episode_idx % len(fixed_game_seeds)]
+            elif fixed_game_seed is not None:
+                raw_env.fixed_game_seed = fixed_game_seed
+            obs, _ = env.reset(seed=base_reset_seed + episode_idx)
+            done = False
+            step_count = 0
+            while not done and step_count < max_steps_per_episode:
+                action, _ = choose_heuristic_action(raw_env)
+                if action is None:
+                    break
+                boards.append(np.asarray(obs['board'], dtype=np.uint8).copy())
+                valid_actions_list.append(np.asarray(obs['valid_actions'], dtype=np.uint8).copy())
+                hands.append(np.asarray(obs['hand'], dtype=np.uint8).copy())
+                available_list.append(np.asarray(obs['available'], dtype=np.uint8).copy())
+                actions.append(int(action))
+                obs, _, done, _, _ = env.step(int(action))
+                step_count += 1
+            if (episode_idx + 1) % progress_every == 0 or episode_idx + 1 == num_episodes:
+                elapsed = time.perf_counter() - collection_start
+                episodes_done = episode_idx + 1
+                episodes_per_sec = episodes_done / max(elapsed, 1e-06)
+                samples_per_sec = len(actions) / max(elapsed, 1e-06)
+                estimated_total = elapsed / episodes_done * num_episodes
+                remaining = max(estimated_total - elapsed, 0.0)
+                print(f'[BC] collect {episodes_done}/{num_episodes} | last_episode_steps={step_count} | last_stages={raw_env.game.stages_passed} | samples={len(actions)} | eps/s={episodes_per_sec:.2f} | samples/s={samples_per_sec:.1f} | elapsed={elapsed / 60.0:.1f}m | eta={remaining / 60.0:.1f}m')
+    finally:
+        env.close()
+    if not actions:
+        raise RuntimeError('No expert samples were collected. Check the heuristic or environment configuration.')
+    archive_path = output_path if output_path.endswith('.npz') else f'{output_path}.npz'
+    ensure_parent_dir(archive_path)
+    np.savez_compressed(archive_path, board=np.asarray(boards, dtype=np.uint8), valid_actions=np.asarray(valid_actions_list, dtype=np.uint8), hand=np.asarray(hands, dtype=np.uint8), available=np.asarray(available_list, dtype=np.uint8), actions=np.asarray(actions, dtype=np.int16), num_episodes=np.asarray(num_episodes, dtype=np.int32), num_samples=np.asarray(len(actions), dtype=np.int32))
+    collection_elapsed = time.perf_counter() - collection_start
+    print(f'[BC] expert dataset written to {archive_path}')
+    print(f'[BC] collection finished in {collection_elapsed / 60.0:.1f}m with {len(actions)} samples')
+    return archive_path
+
+class ExpertDataset(Dataset):
+
+    def __init__(self, archive_path):
+        with np.load(archive_path, allow_pickle=False) as data:
+            self.boards = data['board'].copy()
+            self.valid_actions = data['valid_actions'].copy()
+            self.hands = data['hand'].copy()
+            self.available = data['available'].copy()
+            self.actions = data['actions'].astype(np.int64).copy()
+        lengths = {len(self.boards), len(self.valid_actions), len(self.hands), len(self.available), len(self.actions)}
+        if len(lengths) != 1:
+            raise ValueError(f'Expert archive contains mismatched lengths: {lengths}')
+
+    def __len__(self):
+        return len(self.actions)
+
+    def __getitem__(self, index):
+        observation = {'board': torch.from_numpy(self.boards[index]).float(), 'valid_actions': torch.from_numpy(self.valid_actions[index]).float(), 'hand': torch.from_numpy(self.hands[index]).float(), 'available': torch.from_numpy(self.available[index]).float()}
+        action = torch.tensor(self.actions[index], dtype=torch.long)
+        return (observation, action)
+
+def split_expert_dataset(dataset, validation_split=0.1, seed=0):
+    if validation_split <= 0.0 or len(dataset) < 2:
+        return (Subset(dataset, list(range(len(dataset)))), None)
+    validation_size = int(round(len(dataset) * validation_split))
+    validation_size = max(1, min(validation_size, len(dataset) - 1))
+    indices = np.arange(len(dataset))
+    rng = np.random.default_rng(seed)
+    rng.shuffle(indices)
+    validation_indices = indices[:validation_size].tolist()
+    train_indices = indices[validation_size:].tolist()
+    return (Subset(dataset, train_indices), Subset(dataset, validation_indices))
+
+def evaluate_behavioral_cloning(policy, loader, device):
+    criterion = nn.CrossEntropyLoss()
+    total_loss = 0.0
+    total_correct = 0
+    total_examples = 0
+    policy.eval()
+    with torch.no_grad():
+        for observations, expert_actions in loader:
+            observations = move_batch_to_device(observations, device)
+            expert_actions = expert_actions.to(device)
+            logits = policy_logits(policy, observations)
+            loss = criterion(logits, expert_actions)
+            predictions = torch.argmax(logits, dim=1)
+            batch_size = int(expert_actions.shape[0])
+            total_loss += float(loss.item()) * batch_size
+            total_correct += int((predictions == expert_actions).sum().item())
+            total_examples += batch_size
+    mean_loss = total_loss / max(total_examples, 1)
+    accuracy = total_correct / max(total_examples, 1)
+    return (mean_loss, accuracy)
+
+def parse_net_arch(net_arch):
+    if isinstance(net_arch, str):
+        return [int(value.strip()) for value in net_arch.split(',') if value.strip()]
+    return [int(value) for value in net_arch]
+
+def build_policy_kwargs(cnn_arch, features_dim, net_arch):
+    extractor_class = {'base': CustomCNNExtractor, 'v2': CustomCNNExtractorV2, 'actionaware': ActionAwareCNNExtractor}[cnn_arch]
+    parsed_net_arch = parse_net_arch(net_arch)
+    return dict(features_extractor_class=extractor_class, features_extractor_kwargs=dict(features_dim=features_dim), net_arch=dict(pi=parsed_net_arch, vf=parsed_net_arch), activation_fn=nn.ReLU)
+
+def create_bc_model(device='auto', reward_config=None, shape_pool='all', hand_generator='adaptive_playable', fixed_game_seed=None, cnn_arch='actionaware', features_dim=256, net_arch=(256, 256), learning_rate=0.0003, gamma=0.99, ent_coef=0.0, n_steps=1024, batch_size=1024, n_epochs=4):
+    env = make_env(reward_config=reward_config, shape_pool=shape_pool, hand_generator=hand_generator, fixed_game_seed=fixed_game_seed)
+    model = MaskablePPO('MultiInputPolicy', env, verbose=0, learning_rate=learning_rate, gamma=gamma, ent_coef=ent_coef, n_steps=n_steps, batch_size=batch_size, n_epochs=n_epochs, device=device, policy_kwargs=build_policy_kwargs(cnn_arch, features_dim, net_arch))
+    return (model, env)
+
+def policy_logits(policy, observations):
+    features = policy.extract_features(observations)
+    latent_pi, _ = policy.mlp_extractor(features)
+    return policy.action_net(latent_pi)
+
+def move_batch_to_device(observations, device):
+    return {key: value.to(device) for key, value in observations.items()}
+
+def pretrain_behavioral_cloning(data_path, model_path, reward_config=None, device='auto', shape_pool='all', hand_generator='adaptive_playable', fixed_game_seed=None, cnn_arch='actionaware', features_dim=256, net_arch=(256, 256), learning_rate=0.0003, batch_size=256, epochs=50, validation_split=0.1, target_accuracy=0.95, min_epochs=5, seed=0, shuffle=True, num_workers=0, pin_memory=False, log_dir='./tensorboard_sweeps/bc_logs', tb_log_name='PPO_BlockBlast_BC'):
+    print('[BC] pretrain_behavioral_cloning')
+    print(f'[BC] loading expert dataset from: {data_path}')
+    print(f'[BC] model checkpoint will be saved to: {normalize_model_path(model_path)}.zip')
+    print(f'[BC] using cnn_arch={cnn_arch}, features_dim={features_dim}, net_arch={net_arch}')
+    print(f'[BC] target validation accuracy={target_accuracy:.2f}, validation_split={validation_split:.2f}, min_epochs={min_epochs}')
+    tb_run_dir = os.path.join(log_dir, tb_log_name)
+    print(f'[BC] TensorBoard logs will be written to: {tb_run_dir}')
+    dataset = ExpertDataset(data_path)
+    train_dataset, validation_dataset = split_expert_dataset(dataset, validation_split=validation_split, seed=seed)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, pin_memory=pin_memory)
+    validation_loader = None
+    if validation_dataset is not None and len(validation_dataset) > 0:
+        validation_loader = DataLoader(validation_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
+    model, env = create_bc_model(device=device, reward_config=reward_config, shape_pool=shape_pool, hand_generator=hand_generator, fixed_game_seed=fixed_game_seed, cnn_arch=cnn_arch, features_dim=features_dim, net_arch=net_arch, learning_rate=learning_rate)
+    torch_device = torch.device(device if device != 'auto' else 'cuda' if torch.cuda.is_available() else 'cpu')
+    model.policy.to(torch_device)
+    model.policy.train()
+    optimizer = torch.optim.Adam(model.policy.parameters(), lr=learning_rate)
+    criterion = nn.CrossEntropyLoss()
+    best_validation_accuracy = -1.0
+    best_state_dict = None
+    train_start = time.perf_counter()
+    writer = SummaryWriter(log_dir=tb_run_dir)
+    try:
+        for epoch in range(epochs):
+            epoch_start = time.perf_counter()
+            epoch_loss = 0.0
+            epoch_correct = 0
+            epoch_total = 0
+            model.policy.train()
+            for observations, expert_actions in train_loader:
+                observations = move_batch_to_device(observations, torch_device)
+                expert_actions = expert_actions.to(torch_device)
+                logits = policy_logits(model.policy, observations)
+                loss = criterion(logits, expert_actions)
+                optimizer.zero_grad(set_to_none=True)
+                loss.backward()
+                optimizer.step()
+                with torch.no_grad():
+                    predictions = torch.argmax(logits, dim=1)
+                    epoch_correct += int((predictions == expert_actions).sum().item())
+                    epoch_total += int(expert_actions.shape[0])
+                    epoch_loss += float(loss.item()) * int(expert_actions.shape[0])
+            mean_loss = epoch_loss / max(epoch_total, 1)
+            accuracy = epoch_correct / max(epoch_total, 1)
+            validation_loss = float('nan')
+            validation_accuracy = float('nan')
+            if validation_loader is not None:
+                validation_loss, validation_accuracy = evaluate_behavioral_cloning(model.policy, validation_loader, torch_device)
+                if validation_accuracy > best_validation_accuracy:
+                    best_validation_accuracy = validation_accuracy
+                    best_state_dict = {key: value.detach().cpu().clone() for key, value in model.policy.state_dict().items()}
+            print(f'[BC] epoch {epoch + 1}/{epochs} | train_loss={mean_loss:.4f} | train_acc={accuracy:.4f} | val_loss={validation_loss:.4f} | val_acc={validation_accuracy:.4f} | samples={epoch_total} | epoch_time={time.perf_counter() - epoch_start:.1f}s | elapsed={(time.perf_counter() - train_start) / 60.0:.1f}m')
+            writer.add_scalar('Loss/train', mean_loss, epoch + 1)
+            writer.add_scalar('Accuracy/train', accuracy, epoch + 1)
+            writer.add_scalar('Loss/val', validation_loss, epoch + 1)
+            writer.add_scalar('Accuracy/val', validation_accuracy, epoch + 1)
+            writer.flush()
+            if validation_loader is not None and epoch + 1 >= min_epochs and (validation_accuracy >= target_accuracy):
+                print(f'[BC] target validation accuracy reached: {validation_accuracy:.4f} >= {target_accuracy:.4f}. Stopping early and saving the best policy.')
+                break
+        if best_state_dict is not None:
+            model.policy.load_state_dict(best_state_dict)
+        ensure_parent_dir(model_path)
+        model.save(normalize_model_path(model_path))
+        total_elapsed = time.perf_counter() - train_start
+        print(f'[BC] pre-trained SB3 model saved to {normalize_model_path(model_path)}.zip')
+        print(f'[BC] pretraining finished in {total_elapsed / 60.0:.1f}m')
+    finally:
+        writer.close()
+        env.close()
+    return model
+
+def collect_and_pretrain(data_path, model_path, num_episodes, reward_config=None, device='auto', shape_pool='all', hand_generator='adaptive_playable', fixed_game_seed=None, fixed_game_seeds=None, max_steps_per_episode=5000, cnn_arch='actionaware', features_dim=256, net_arch=(256, 256), learning_rate=0.0003, batch_size=256, epochs=50, validation_split=0.1, target_accuracy=0.95, min_epochs=5, seed=0, log_dir='./tensorboard_sweeps/bc_logs', tb_log_name='PPO_BlockBlast_BC'):
+    archive_path = collect_expert_data(output_path=data_path, num_episodes=num_episodes, reward_config=reward_config, shape_pool=shape_pool, hand_generator=hand_generator, fixed_game_seed=fixed_game_seed, fixed_game_seeds=fixed_game_seeds, max_steps_per_episode=max_steps_per_episode)
+    return pretrain_behavioral_cloning(data_path=archive_path, model_path=model_path, reward_config=reward_config, device=device, shape_pool=shape_pool, hand_generator=hand_generator, fixed_game_seed=fixed_game_seed, cnn_arch=cnn_arch, features_dim=features_dim, net_arch=net_arch, learning_rate=learning_rate, batch_size=batch_size, epochs=epochs, validation_split=validation_split, target_accuracy=target_accuracy, min_epochs=min_epochs, seed=seed, log_dir=log_dir, tb_log_name=tb_log_name)
+
+---------
+Fisier: scripts/run_basecnn_contact_threshold_gamma06.sh
+Descriere: Script de pornire pentru modelul 8x8 cu CNN de baza si reward de contact.
+---------
+#!/usr/bin/env bash
+set -euo pipefail
+
+RUN_TAG="${1:-basecnn_contact_threshold_gamma06_$(date +%Y%m%d_%H%M%S)}"
+INIT_FROM_MODEL="${INIT_FROM_MODEL:-none}"
+
+LOG_ROOT="tensorboard_sweeps/${RUN_TAG}"
+MODEL_ROOT="checkpoints/cnn_contact_threshold/${RUN_TAG}"
+MODEL_PATH="${MODEL_ROOT}/block_blast_basecnn_contact_threshold_gamma06_v1"
+
+mkdir -p "${LOG_ROOT}" "${MODEL_ROOT}"
+
+INIT_ARGS=()
+if [[ "${INIT_FROM_MODEL}" != "none" && -n "${INIT_FROM_MODEL}" ]]; then
+  INIT_ARGS=(--init-from-model "${INIT_FROM_MODEL}")
+fi
+
+venv/bin/python train.py \
+  --device cpu \
+  --vec-env subproc \
+  --subproc-start-method fork \
+  --num-cpu 8 \
+  --torch-threads 1 \
+  --total-timesteps 25000000 \
+  --model-path "${MODEL_PATH}" \
+  --checkpoint-dir "${MODEL_ROOT}" \
+  --checkpoint-freq 250000 \
+  --tb-log-name "basecnn_contact_threshold_gamma06_v1" \
+  --log-dir "${LOG_ROOT}" \
+  --no-resume \
+  ${INIT_ARGS[@]+"${INIT_ARGS[@]}"} \
+  --cnn-arch base \
+  --features-dim 256 \
+  --shape-pool all \
+  --hand-generator adaptive_playable \
+  --no-apply-hole-penalty \
+  --reward-placement 0.0 \
+  --reward-line-scale 28.0 \
+  --reward-line-bonus 1.5 \
+  --reward-stage-complete 0.0 \
+  --reward-no-line 0.0 \
+  --reward-game-over 90.0 \
+  --reward-game-over-early-weight 0.0 \
+  --reward-contact-scale 24.0 \
+  --reward-contact-power 1.15 \
+  --reward-contact-threshold 0.40 \
+  --reward-contact-penalty-scale 8.0 \
+  --complexity-simple-prob 0.78 \
+  --complexity-medium-prob 0.18 \
+  --complexity-hard-prob 0.04 \
+  --learning-rate 0.0008 \
+  --lr-schedule constant \
+  --n-steps 1024 \
+  --batch-size 1024 \
+  --n-epochs 4 \
+  --gamma 0.60 \
+  --ent-coef 0.04 \
+  --eval-freq 100000 \
+  --eval-episodes 50 \
+  --max-eval-steps 5000
+
+---------
+Fisier: scripts/run_immediate_contact_gamma04_lines.sh
+Descriere: Script de pornire pentru varianta finala cu generator bland, contact si reward pentru linii.
+---------
+#!/usr/bin/env bash
+set -euo pipefail
+
+RUN_TAG="${1:-immediate_contact_gamma04_lines_$(date +%Y%m%d_%H%M%S)}"
+INIT_FROM_MODEL="${INIT_FROM_MODEL:-none}"
+
+LOG_ROOT="tensorboard_sweeps/${RUN_TAG}"
+MODEL_ROOT="checkpoints/cnn_immediate_contact/${RUN_TAG}"
+MODEL_PATH="${MODEL_ROOT}/block_blast_cnn_immediate_contact_gamma04_lines_v1"
+
+mkdir -p "${LOG_ROOT}" "${MODEL_ROOT}"
+
+INIT_ARGS=()
+if [[ "${INIT_FROM_MODEL}" != "none" && -n "${INIT_FROM_MODEL}" ]]; then
+  INIT_ARGS=(--init-from-model "${INIT_FROM_MODEL}")
+fi
+
+venv/bin/python train.py \
+  --device cpu \
+  --vec-env subproc \
+  --subproc-start-method fork \
+  --num-cpu 8 \
+  --torch-threads 1 \
+  --total-timesteps 25000000 \
+  --model-path "${MODEL_PATH}" \
+  --checkpoint-dir "${MODEL_ROOT}" \
+  --checkpoint-freq 250000 \
+  --tb-log-name "cnn_immediate_contact_gamma04_lines_v1" \
+  --log-dir "${LOG_ROOT}" \
+  --no-resume \
+  ${INIT_ARGS[@]+"${INIT_ARGS[@]}"} \
+  --shape-pool all \
+  --hand-generator adaptive_playable \
+  --no-apply-hole-penalty \
+  --reward-placement 0.0 \
+  --reward-line-scale 42.0 \
+  --reward-line-bonus 4.0 \
+  --reward-stage-complete 0.0 \
+  --reward-no-line 0.0 \
+  --reward-game-over 90.0 \
+  --reward-game-over-early-weight 0.0 \
+  --reward-contact-scale 18.0 \
+  --reward-contact-power 1.15 \
+  --complexity-simple-prob 0.78 \
+  --complexity-medium-prob 0.18 \
+  --complexity-hard-prob 0.04 \
+  --learning-rate 0.0002 \
+  --lr-schedule constant \
+  --n-steps 1024 \
+  --batch-size 1024 \
+  --n-epochs 4 \
+  --gamma 0.40 \
+  --ent-coef 0.04 \
+  --eval-freq 100000 \
+  --eval-episodes 50 \
+  --max-eval-steps 5000
+
+---------
+Fisier: scripts/run_4x4_best8x8_basecnn.sh
+Descriere: Script de pornire pentru experimentul suplimentar pe tabla 4x4.
+---------
+#!/usr/bin/env bash
+set -euo pipefail
+
+RUN_TAG="${1:-4x4_best8x8_basecnn_g03_lr2e3_$(date +%Y%m%d_%H%M%S)}"
+TOTAL_TIMESTEPS="${2:-25000000}"
+
+DEVICE="${DEVICE:-cpu}"
+NUM_CPU="${NUM_CPU:-8}"
+TORCH_THREADS="${TORCH_THREADS:-1}"
+MPLCONFIGDIR="${MPLCONFIGDIR:-/tmp/mplconfig}"
+export MPLCONFIGDIR
+
+LOG_ROOT="tensorboard_sweeps/${RUN_TAG}"
+MODEL_ROOT="checkpoints/4x4_best8x8/${RUN_TAG}"
+MODEL_PATH="${MODEL_ROOT}/block_blast_4x4_best8x8_basecnn_v1"
+
+mkdir -p "${LOG_ROOT}" "${MODEL_ROOT}" "${MPLCONFIGDIR}"
+
+venv/bin/python train.py \
+  --device "${DEVICE}" \
+  --vec-env subproc \
+  --subproc-start-method fork \
+  --num-cpu "${NUM_CPU}" \
+  --torch-threads "${TORCH_THREADS}" \
+  --total-timesteps "${TOTAL_TIMESTEPS}" \
+  --model-path "${MODEL_PATH}" \
+  --checkpoint-dir "${MODEL_ROOT}" \
+  --checkpoint-freq 250000 \
+  --tb-log-name "block_blast_4x4_best8x8_basecnn_v1" \
+  --log-dir "${LOG_ROOT}" \
+  --no-resume \
+  --cnn-arch base \
+  --features-dim 256 \
+  --net-arch 256,256 \
+  --shape-pool all \
+  --hand-generator adaptive_playable \
+  --no-apply-hole-penalty \
+  --reward-placement 0.0 \
+  --reward-line-scale 28.0 \
+  --reward-line-bonus 1.5 \
+  --reward-stage-complete 0.0 \
+  --reward-no-line 0.0 \
+  --reward-game-over 90.0 \
+  --reward-game-over-early-weight 0.0 \
+  --reward-contact-scale 24.0 \
+  --reward-contact-power 1.15 \
+  --reward-contact-threshold 0.40 \
+  --reward-contact-penalty-scale 8.0 \
+  --complexity-simple-prob 0.78 \
+  --complexity-medium-prob 0.18 \
+  --complexity-hard-prob 0.04 \
+  --learning-rate 0.002 \
+  --lr-schedule constant \
+  --n-steps 1024 \
+  --batch-size 1024 \
+  --n-epochs 4 \
+  --gamma 0.30 \
+  --ent-coef 0.04 \
+  --eval-freq 100000 \
+  --eval-episodes 50 \
+  --max-eval-steps 5000
+
+---------
+Fisier: scripts/run_behavioral_cloning.py
+Descriere: Entry point pentru colectare de exemple euristice si behavioral cloning.
+---------
+#!/usr/bin/env python3
+
+import argparse
+import os
+import sys
+
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+from behavioral_cloning import collect_expert_data, pretrain_behavioral_cloning
+from blocks import TRAINING_POOLS
+
+
+def parse_fixed_game_seeds(raw_value):
+    if not raw_value:
+        return None
+    return [int(value.strip()) for value in raw_value.split(",") if value.strip()]
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Block Blast behavioral cloning pretraining")
+    parser.add_argument("--mode", choices=["collect", "train", "all"], default="all")
+    parser.add_argument("--data-path", default="./datasets/bc_expert/block_blast_bc_expert.npz")
+    parser.add_argument("--model-path", default="./checkpoints/bc/block_blast_bc_policy")
+    parser.add_argument("--num-episodes", type=int, default=500)
+    parser.add_argument("--max-steps-per-episode", type=int, default=5000)
+    parser.add_argument("--shape-pool", choices=sorted(TRAINING_POOLS.keys()), default="all")
+    parser.add_argument("--hand-generator", choices=["random", "playable", "adaptive_playable", "solvable"], default="adaptive_playable")
+    parser.add_argument("--fixed-game-seed", type=int, default=None)
+    parser.add_argument("--fixed-game-seeds", default=None, help="Comma-separated fixed seeds for data collection")
+    parser.add_argument("--device", choices=["auto", "cpu", "cuda", "mps"], default="auto")
+    parser.add_argument("--cnn-arch", choices=["base", "v2", "actionaware"], default="actionaware")
+    parser.add_argument("--features-dim", type=int, default=256)
+    parser.add_argument("--net-arch", default="256,256")
+    parser.add_argument("--learning-rate", type=float, default=3e-4)
+    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--epochs", type=int, default=50)
+    parser.add_argument("--validation-split", type=float, default=0.1)
+    parser.add_argument("--target-accuracy", type=float, default=0.95)
+    parser.add_argument("--min-epochs", type=int, default=5)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--log-dir", default="./tensorboard_sweeps/bc_logs")
+    parser.add_argument("--tb-log-name", default="PPO_BlockBlast_BC")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    fixed_game_seeds = parse_fixed_game_seeds(args.fixed_game_seeds)
+
+    print("[BC] launch summary")
+    print(f"[BC] dataset file: {args.data_path}")
+    print(f"[BC] model checkpoint: {args.model_path}.zip")
+    print(f"[BC] mode: {args.mode}")
+    print(f"[BC] target accuracy: {args.target_accuracy:.2f}")
+    print(f"[BC] num episodes: {args.num_episodes}")
+    print(f"[BC] TensorBoard log dir: {os.path.join(args.log_dir, args.tb_log_name)}")
+
+    if args.mode == "collect":
+        archive_path = collect_expert_data(
+            output_path=args.data_path,
+            num_episodes=args.num_episodes,
+            shape_pool=args.shape_pool,
+            hand_generator=args.hand_generator,
+            fixed_game_seed=args.fixed_game_seed,
+            fixed_game_seeds=fixed_game_seeds,
+            max_steps_per_episode=args.max_steps_per_episode,
+        )
+        print(f"[BC] expert dataset saved to {archive_path}")
+        return
+
+    if not os.path.exists(args.data_path):
+        raise FileNotFoundError(f"Expert dataset not found: {args.data_path}")
+
+    if args.mode == "train":
+        print(f"[BC] loading existing dataset only: {args.data_path}")
+        pretrain_behavioral_cloning(
+            data_path=args.data_path,
+            model_path=args.model_path,
+            device=args.device,
+            shape_pool=args.shape_pool,
+            hand_generator=args.hand_generator,
+            fixed_game_seed=args.fixed_game_seed,
+            cnn_arch=args.cnn_arch,
+            features_dim=args.features_dim,
+            net_arch=args.net_arch,
+            learning_rate=args.learning_rate,
+            batch_size=args.batch_size,
+            epochs=args.epochs,
+            validation_split=args.validation_split,
+            target_accuracy=args.target_accuracy,
+            min_epochs=args.min_epochs,
+            seed=args.seed,
+            log_dir=args.log_dir,
+            tb_log_name=args.tb_log_name,
+        )
+        return
+
+    archive_path = collect_expert_data(
+        output_path=args.data_path,
+        num_episodes=args.num_episodes,
+        shape_pool=args.shape_pool,
+        hand_generator=args.hand_generator,
+        fixed_game_seed=args.fixed_game_seed,
+        fixed_game_seeds=fixed_game_seeds,
+        max_steps_per_episode=args.max_steps_per_episode,
+    )
+    pretrain_behavioral_cloning(
+        data_path=archive_path,
+        model_path=args.model_path,
+        device=args.device,
+        shape_pool=args.shape_pool,
+        hand_generator=args.hand_generator,
+        fixed_game_seed=args.fixed_game_seed,
+        cnn_arch=args.cnn_arch,
+        features_dim=args.features_dim,
+        net_arch=args.net_arch,
+        learning_rate=args.learning_rate,
+        batch_size=args.batch_size,
+        epochs=args.epochs,
+        validation_split=args.validation_split,
+        target_accuracy=args.target_accuracy,
+        min_epochs=args.min_epochs,
+        seed=args.seed,
+        log_dir=args.log_dir,
+        tb_log_name=args.tb_log_name,
+    )
+    print(f"[BC] expert dataset saved to {archive_path}")
+    print(f"[BC] pre-trained SB3 model saved to {args.model_path}.zip")
+
+
+if __name__ == "__main__":
+    main()

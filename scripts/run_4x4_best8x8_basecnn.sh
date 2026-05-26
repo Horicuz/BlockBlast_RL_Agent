@@ -23,6 +23,7 @@ venv/bin/python train.py \
   --num-cpu "${NUM_CPU}" \
   --torch-threads "${TORCH_THREADS}" \
   --total-timesteps "${TOTAL_TIMESTEPS}" \
+  --board-size 4 \
   --model-path "${MODEL_PATH}" \
   --checkpoint-dir "${MODEL_ROOT}" \
   --checkpoint-freq 250000 \

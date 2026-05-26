@@ -8,8 +8,15 @@ from torch.utils.tensorboard import SummaryWriter
 from env import ActionAwareCNNExtractor, BlockBlastEnv, CustomCNNExtractor, CustomCNNExtractorV2
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.wrappers import ActionMasker
-GRID_SIZE = 4
+GRID_SIZE = 8
 DEFAULT_REWARD_CONFIG = {'placement_reward': 0.0, 'line_clear_scale': 28.0, 'line_clear_bonus': 1.5, 'stage_complete_reward': 0.0, 'no_line_penalty': 0.0, 'game_over_penalty': 90.0, 'game_over_early_weight': 0.0, 'contact_reward_scale': 24.0, 'contact_reward_power': 1.15, 'contact_reward_threshold': 0.4, 'contact_penalty_scale': 8.0, 'complexity_simple_prob': 0.78, 'complexity_medium_prob': 0.18, 'complexity_hard_prob': 0.04}
+
+def configure_grid_size(board_size):
+    global GRID_SIZE
+    GRID_SIZE = int(board_size)
+
+def actions_per_hand():
+    return GRID_SIZE * GRID_SIZE
 
 def ensure_parent_dir(path):
     directory = os.path.dirname(path)
@@ -30,14 +37,15 @@ def mask_fn(env):
     raise AttributeError('valid_action_mask() is not available on the current environment')
 
 def decode_action(action):
-    hand_idx = action // 16
-    remainder = action % 16
-    row = remainder // 4
-    col = remainder % 4
+    per_hand = actions_per_hand()
+    hand_idx = action // per_hand
+    remainder = action % per_hand
+    row = remainder // GRID_SIZE
+    col = remainder % GRID_SIZE
     return (hand_idx, row, col)
 
 def action_from_selection(hand_index, row, col):
-    return hand_index * 16 + row * 4 + col
+    return hand_index * actions_per_hand() + row * GRID_SIZE + col
 
 def can_place_on_grid(grid, block, row, col):
     block_h, block_w = block.shape
@@ -165,19 +173,21 @@ def build_reward_config(reward_config=None, shape_pool='all', hand_generator='ad
     merged['hand_generator'] = hand_generator
     return merged
 
-def make_env(reward_config=None, shape_pool='all', hand_generator='adaptive_playable', fixed_game_seed=None):
+def make_env(reward_config=None, shape_pool='all', hand_generator='adaptive_playable', fixed_game_seed=None, board_size=GRID_SIZE):
+    configure_grid_size(board_size)
     resolved_reward_config = build_reward_config(reward_config, shape_pool=shape_pool, hand_generator=hand_generator)
-    env = BlockBlastEnv(reward_config=resolved_reward_config, apply_hole_penalty=bool(resolved_reward_config.get('apply_hole_penalty', False)), fixed_game_seed=fixed_game_seed, shape_pool=shape_pool, hand_generator=hand_generator)
+    env = BlockBlastEnv(reward_config=resolved_reward_config, apply_hole_penalty=bool(resolved_reward_config.get('apply_hole_penalty', False)), fixed_game_seed=fixed_game_seed, shape_pool=shape_pool, hand_generator=hand_generator, board_size=GRID_SIZE)
     return ActionMasker(env, mask_fn)
 
-def collect_expert_data(output_path, num_episodes, reward_config=None, shape_pool='all', hand_generator='adaptive_playable', fixed_game_seed=None, fixed_game_seeds=None, max_steps_per_episode=5000, base_reset_seed=10000):
+def collect_expert_data(output_path, num_episodes, reward_config=None, shape_pool='all', hand_generator='adaptive_playable', fixed_game_seed=None, fixed_game_seeds=None, max_steps_per_episode=5000, base_reset_seed=10000, board_size=GRID_SIZE):
+    configure_grid_size(board_size)
     archive_path = output_path if output_path.endswith('.npz') else f'{output_path}.npz'
     print('[BC] collect_expert_data')
-    print(f'[BC] reading environment state from BlockBlastEnv with shape_pool={shape_pool}, hand_generator={hand_generator}')
+    print(f'[BC] reading environment state from BlockBlastEnv with board_size={GRID_SIZE}, shape_pool={shape_pool}, hand_generator={hand_generator}')
     print(f'[BC] expert actions come from the built-in heuristic in watch.py')
     print(f'[BC] saving expert dataset to: {archive_path}')
     print(f'[BC] planned episodes: {num_episodes}, max_steps_per_episode: {max_steps_per_episode}')
-    raw_env = BlockBlastEnv(reward_config=build_reward_config(reward_config, shape_pool=shape_pool, hand_generator=hand_generator), apply_hole_penalty=bool((reward_config or {}).get('apply_hole_penalty', False)), fixed_game_seed=fixed_game_seed, shape_pool=shape_pool, hand_generator=hand_generator)
+    raw_env = BlockBlastEnv(reward_config=build_reward_config(reward_config, shape_pool=shape_pool, hand_generator=hand_generator), apply_hole_penalty=bool((reward_config or {}).get('apply_hole_penalty', False)), fixed_game_seed=fixed_game_seed, shape_pool=shape_pool, hand_generator=hand_generator, board_size=GRID_SIZE)
     env = ActionMasker(raw_env, mask_fn)
     boards = []
     valid_actions_list = []
@@ -291,8 +301,9 @@ def build_policy_kwargs(cnn_arch, features_dim, net_arch):
     parsed_net_arch = parse_net_arch(net_arch)
     return dict(features_extractor_class=extractor_class, features_extractor_kwargs=dict(features_dim=features_dim), net_arch=dict(pi=parsed_net_arch, vf=parsed_net_arch), activation_fn=nn.ReLU)
 
-def create_bc_model(device='auto', reward_config=None, shape_pool='all', hand_generator='adaptive_playable', fixed_game_seed=None, cnn_arch='actionaware', features_dim=256, net_arch=(256, 256), learning_rate=0.0003, gamma=0.99, ent_coef=0.0, n_steps=1024, batch_size=1024, n_epochs=4):
-    env = make_env(reward_config=reward_config, shape_pool=shape_pool, hand_generator=hand_generator, fixed_game_seed=fixed_game_seed)
+def create_bc_model(device='auto', reward_config=None, shape_pool='all', hand_generator='adaptive_playable', fixed_game_seed=None, cnn_arch='actionaware', features_dim=256, net_arch=(256, 256), learning_rate=0.0003, gamma=0.99, ent_coef=0.0, n_steps=1024, batch_size=1024, n_epochs=4, board_size=GRID_SIZE):
+    configure_grid_size(board_size)
+    env = make_env(reward_config=reward_config, shape_pool=shape_pool, hand_generator=hand_generator, fixed_game_seed=fixed_game_seed, board_size=GRID_SIZE)
     model = MaskablePPO('MultiInputPolicy', env, verbose=0, learning_rate=learning_rate, gamma=gamma, ent_coef=ent_coef, n_steps=n_steps, batch_size=batch_size, n_epochs=n_epochs, device=device, policy_kwargs=build_policy_kwargs(cnn_arch, features_dim, net_arch))
     return (model, env)
 
@@ -304,11 +315,12 @@ def policy_logits(policy, observations):
 def move_batch_to_device(observations, device):
     return {key: value.to(device) for key, value in observations.items()}
 
-def pretrain_behavioral_cloning(data_path, model_path, reward_config=None, device='auto', shape_pool='all', hand_generator='adaptive_playable', fixed_game_seed=None, cnn_arch='actionaware', features_dim=256, net_arch=(256, 256), learning_rate=0.0003, batch_size=256, epochs=50, validation_split=0.1, target_accuracy=0.95, min_epochs=5, seed=0, shuffle=True, num_workers=0, pin_memory=False, log_dir='./tensorboard_sweeps/bc_logs', tb_log_name='PPO_BlockBlast_BC'):
+def pretrain_behavioral_cloning(data_path, model_path, reward_config=None, device='auto', shape_pool='all', hand_generator='adaptive_playable', fixed_game_seed=None, cnn_arch='actionaware', features_dim=256, net_arch=(256, 256), learning_rate=0.0003, batch_size=256, epochs=50, validation_split=0.1, target_accuracy=0.95, min_epochs=5, seed=0, shuffle=True, num_workers=0, pin_memory=False, log_dir='./tensorboard_sweeps/bc_logs', tb_log_name='PPO_BlockBlast_BC', board_size=GRID_SIZE):
+    configure_grid_size(board_size)
     print('[BC] pretrain_behavioral_cloning')
     print(f'[BC] loading expert dataset from: {data_path}')
     print(f'[BC] model checkpoint will be saved to: {normalize_model_path(model_path)}.zip')
-    print(f'[BC] using cnn_arch={cnn_arch}, features_dim={features_dim}, net_arch={net_arch}')
+    print(f'[BC] using board_size={GRID_SIZE}, cnn_arch={cnn_arch}, features_dim={features_dim}, net_arch={net_arch}')
     print(f'[BC] target validation accuracy={target_accuracy:.2f}, validation_split={validation_split:.2f}, min_epochs={min_epochs}')
     tb_run_dir = os.path.join(log_dir, tb_log_name)
     print(f'[BC] TensorBoard logs will be written to: {tb_run_dir}')
@@ -318,7 +330,7 @@ def pretrain_behavioral_cloning(data_path, model_path, reward_config=None, devic
     validation_loader = None
     if validation_dataset is not None and len(validation_dataset) > 0:
         validation_loader = DataLoader(validation_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
-    model, env = create_bc_model(device=device, reward_config=reward_config, shape_pool=shape_pool, hand_generator=hand_generator, fixed_game_seed=fixed_game_seed, cnn_arch=cnn_arch, features_dim=features_dim, net_arch=net_arch, learning_rate=learning_rate)
+    model, env = create_bc_model(device=device, reward_config=reward_config, shape_pool=shape_pool, hand_generator=hand_generator, fixed_game_seed=fixed_game_seed, cnn_arch=cnn_arch, features_dim=features_dim, net_arch=net_arch, learning_rate=learning_rate, board_size=GRID_SIZE)
     torch_device = torch.device(device if device != 'auto' else 'cuda' if torch.cuda.is_available() else 'cpu')
     model.policy.to(torch_device)
     model.policy.train()
@@ -378,6 +390,7 @@ def pretrain_behavioral_cloning(data_path, model_path, reward_config=None, devic
         env.close()
     return model
 
-def collect_and_pretrain(data_path, model_path, num_episodes, reward_config=None, device='auto', shape_pool='all', hand_generator='adaptive_playable', fixed_game_seed=None, fixed_game_seeds=None, max_steps_per_episode=5000, cnn_arch='actionaware', features_dim=256, net_arch=(256, 256), learning_rate=0.0003, batch_size=256, epochs=50, validation_split=0.1, target_accuracy=0.95, min_epochs=5, seed=0, log_dir='./tensorboard_sweeps/bc_logs', tb_log_name='PPO_BlockBlast_BC'):
-    archive_path = collect_expert_data(output_path=data_path, num_episodes=num_episodes, reward_config=reward_config, shape_pool=shape_pool, hand_generator=hand_generator, fixed_game_seed=fixed_game_seed, fixed_game_seeds=fixed_game_seeds, max_steps_per_episode=max_steps_per_episode)
-    return pretrain_behavioral_cloning(data_path=archive_path, model_path=model_path, reward_config=reward_config, device=device, shape_pool=shape_pool, hand_generator=hand_generator, fixed_game_seed=fixed_game_seed, cnn_arch=cnn_arch, features_dim=features_dim, net_arch=net_arch, learning_rate=learning_rate, batch_size=batch_size, epochs=epochs, validation_split=validation_split, target_accuracy=target_accuracy, min_epochs=min_epochs, seed=seed, log_dir=log_dir, tb_log_name=tb_log_name)
+def collect_and_pretrain(data_path, model_path, num_episodes, reward_config=None, device='auto', shape_pool='all', hand_generator='adaptive_playable', fixed_game_seed=None, fixed_game_seeds=None, max_steps_per_episode=5000, cnn_arch='actionaware', features_dim=256, net_arch=(256, 256), learning_rate=0.0003, batch_size=256, epochs=50, validation_split=0.1, target_accuracy=0.95, min_epochs=5, seed=0, log_dir='./tensorboard_sweeps/bc_logs', tb_log_name='PPO_BlockBlast_BC', board_size=GRID_SIZE):
+    configure_grid_size(board_size)
+    archive_path = collect_expert_data(output_path=data_path, num_episodes=num_episodes, reward_config=reward_config, shape_pool=shape_pool, hand_generator=hand_generator, fixed_game_seed=fixed_game_seed, fixed_game_seeds=fixed_game_seeds, max_steps_per_episode=max_steps_per_episode, board_size=GRID_SIZE)
+    return pretrain_behavioral_cloning(data_path=archive_path, model_path=model_path, reward_config=reward_config, device=device, shape_pool=shape_pool, hand_generator=hand_generator, fixed_game_seed=fixed_game_seed, cnn_arch=cnn_arch, features_dim=features_dim, net_arch=net_arch, learning_rate=learning_rate, batch_size=batch_size, epochs=epochs, validation_split=validation_split, target_accuracy=target_accuracy, min_epochs=min_epochs, seed=seed, log_dir=log_dir, tb_log_name=tb_log_name, board_size=GRID_SIZE)

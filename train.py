@@ -117,6 +117,7 @@ class StageEvalCallback(BaseCallback):
             fixed_game_seed=self.fixed_game_seed,
             shape_pool=self.shape_pool,
             hand_generator=self.hand_generator,
+            board_size=self.reward_config["board_size"],
         )
 
         try:
@@ -154,6 +155,7 @@ def make_env(reward_config, fixed_game_seed=None):
             fixed_game_seed=fixed_game_seed,
             shape_pool=reward_config["shape_pool"],
             hand_generator=reward_config["hand_generator"],
+            board_size=reward_config["board_size"],
         )
         env = Monitor(env)
         env = ActionMasker(env, mask_fn)
@@ -183,6 +185,7 @@ def parse_args():
     parser.add_argument("--log-dir", default="./tensorboard_logs/")
     parser.add_argument("--checkpoint-dir", default="./checkpoints/cnn/")
     parser.add_argument("--checkpoint-freq", type=int, default=0)
+    parser.add_argument("--board-size", type=int, choices=[4, 8], default=8)
     parser.add_argument("--resume", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--log-stats", action=argparse.BooleanOptionalAction, default=True)
 
@@ -295,6 +298,7 @@ def build_reward_config(args):
         "complexity_hard_prob": args.complexity_hard_prob,
         "shape_pool": args.shape_pool,
         "hand_generator": args.hand_generator,
+        "board_size": args.board_size,
     }
 
 
@@ -509,6 +513,7 @@ def main():
     print(f"Se pornesc {args.num_cpu} instante de joc in paralel.")
     print(f"Model path: {args.model_path}.zip")
     print(f"Checkpoint dir: {args.checkpoint_dir}")
+    print(f"Board size: {args.board_size}x{args.board_size}")
     print(f"Hole penalty: {'ENABLED' if args.apply_hole_penalty else 'DISABLED'}")
     print(f"Shape pool: {args.shape_pool} ({len(TRAINING_POOLS[args.shape_pool])} piese)")
     print(f"Hand generator: {args.hand_generator}")

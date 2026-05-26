@@ -25,6 +25,7 @@ def parse_args():
     parser.add_argument("--model-path", default="./checkpoints/bc/block_blast_bc_policy")
     parser.add_argument("--num-episodes", type=int, default=500)
     parser.add_argument("--max-steps-per-episode", type=int, default=5000)
+    parser.add_argument("--board-size", type=int, choices=[4, 8], default=8)
     parser.add_argument("--shape-pool", choices=sorted(TRAINING_POOLS.keys()), default="all")
     parser.add_argument("--hand-generator", choices=["random", "playable", "adaptive_playable", "solvable"], default="adaptive_playable")
     parser.add_argument("--fixed-game-seed", type=int, default=None)
@@ -53,6 +54,7 @@ def main():
     print(f"[BC] dataset file: {args.data_path}")
     print(f"[BC] model checkpoint: {args.model_path}.zip")
     print(f"[BC] mode: {args.mode}")
+    print(f"[BC] board size: {args.board_size}x{args.board_size}")
     print(f"[BC] target accuracy: {args.target_accuracy:.2f}")
     print(f"[BC] num episodes: {args.num_episodes}")
     print(f"[BC] TensorBoard log dir: {os.path.join(args.log_dir, args.tb_log_name)}")
@@ -66,6 +68,7 @@ def main():
             fixed_game_seed=args.fixed_game_seed,
             fixed_game_seeds=fixed_game_seeds,
             max_steps_per_episode=args.max_steps_per_episode,
+            board_size=args.board_size,
         )
         print(f"[BC] expert dataset saved to {archive_path}")
         return
@@ -94,6 +97,7 @@ def main():
             seed=args.seed,
             log_dir=args.log_dir,
             tb_log_name=args.tb_log_name,
+            board_size=args.board_size,
         )
         return
 
@@ -105,6 +109,7 @@ def main():
         fixed_game_seed=args.fixed_game_seed,
         fixed_game_seeds=fixed_game_seeds,
         max_steps_per_episode=args.max_steps_per_episode,
+        board_size=args.board_size,
     )
     pretrain_behavioral_cloning(
         data_path=archive_path,
@@ -125,6 +130,7 @@ def main():
         seed=args.seed,
         log_dir=args.log_dir,
         tb_log_name=args.tb_log_name,
+        board_size=args.board_size,
     )
     print(f"[BC] expert dataset saved to {archive_path}")
     print(f"[BC] pre-trained SB3 model saved to {args.model_path}.zip")

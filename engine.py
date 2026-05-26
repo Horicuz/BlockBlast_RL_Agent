@@ -2,7 +2,7 @@ import numpy as np
 import random
 from blocks import COMPLEXITY_BY_SHAPE, SHAPE_LIBRARY, SIZE_BY_SHAPE
 
-BOARD_SIZE = 4
+BOARD_SIZE = 8
 BOARD_CELLS = BOARD_SIZE * BOARD_SIZE
 
 class BlockBlastLogic:

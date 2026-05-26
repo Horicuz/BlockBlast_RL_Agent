@@ -22,6 +22,7 @@ venv/bin/python train.py \
   --num-cpu 8 \
   --torch-threads 1 \
   --total-timesteps 25000000 \
+  --board-size 8 \
   --model-path "${MODEL_PATH}" \
   --checkpoint-dir "${MODEL_ROOT}" \
   --checkpoint-freq 250000 \
