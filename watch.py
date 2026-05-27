@@ -24,6 +24,7 @@ WINDOW_HEIGHT = 930
 
 FPS = 60
 AI_STEP_INTERVAL = 0.35
+HISTORY_LIMIT = 1000
 
 SINGLE_CELL = 60
 SINGLE_BOARD_X = 88
@@ -234,6 +235,19 @@ def restore_game_state(game, game_state):
         game.rng.setstate(game_state["rng_state"])
 
 
+def capture_playback_state(raw_env, status, done):
+    return {
+        "game": capture_game_state(raw_env.game),
+        "status": status,
+        "done": bool(done),
+    }
+
+
+def restore_playback_state(raw_env, playback_state):
+    restore_game_state(raw_env.game, playback_state["game"])
+    return raw_env._get_obs(), playback_state["done"], playback_state["status"]
+
+
 def create_env_bundle(args=None):
     board_size = getattr(args, "board_size", DEFAULT_BOARD_SIZE)
     raw_env = BlockBlastEnv(
@@ -339,9 +353,11 @@ def ai_step(model, obs, raw_env, env):
 
 def can_place_on_grid(grid, block, row, col):
     block_h, block_w = block.shape
-    if row + block_h > GRID_SIZE or col + block_w > GRID_SIZE:
+    if row < 0 or col < 0 or row + block_h > GRID_SIZE or col + block_w > GRID_SIZE:
         return False
     target = grid[row:row + block_h, col:col + block_w]
+    if target.shape != block.shape:
+        return False
     return not np.any(np.logical_and(target, block))
 
 
@@ -642,13 +658,18 @@ class ArenaWidget(QWidget):
         self.solver_edit_grid = self.solver_raw.game.grid.copy()
         self.solver_edit_hand_keys = [shape_key_from_matrix(block) for block in self.solver_raw.game.hand]
         self.solver_solving = False
+        self.solver_autoplay = False
         self.solver_done = False
-        self.solver_status = "Edit board + hand, then click Start AI Solve."
+        self.solver_history = []
+        self.solver_status = "Edit board + hand, then click Run AI or Next Move."
         self.solver_last_step_time = time.time()
         self.solver_buttons = {
-            "start": QRect(644, 240, 250, 52),
-            "reset": QRect(916, 240, 250, 52),
-            "back": QRect(1188, 240, 250, 52),
+            "run": QRect(644, 240, 160, 52),
+            "stop": QRect(820, 240, 160, 52),
+            "next": QRect(996, 240, 180, 52),
+            "undo": QRect(1192, 240, 180, 52),
+            "reset": QRect(644, 306, 250, 52),
+            "back": QRect(916, 306, 250, 52),
         }
 
     def init_watch_scene(self, policy="ai"):
@@ -656,11 +677,17 @@ class ArenaWidget(QWidget):
         self.watch_policy = policy
         self.watch_raw, self.watch_env, self.watch_obs = create_env_bundle(self.args)
         self.watch_done = False
+        self.watch_autoplay = True
+        self.watch_history = []
         self.watch_status = "Heuristic is playing this random run." if policy == "heuristic" else "AI is playing this random run."
         self.watch_last_step_time = 0.0
         self.watch_buttons = {
-            "new": QRect(642, 182, 270, 50),
-            "back": QRect(642, 246, 270, 50),
+            "run": QRect(642, 240, 132, 50),
+            "stop": QRect(790, 240, 132, 50),
+            "next": QRect(938, 240, 160, 50),
+            "undo": QRect(1114, 240, 160, 50),
+            "new": QRect(1290, 240, 150, 50),
+            "back": QRect(642, 304, 270, 50),
         }
 
     def init_versus_scene(self):
@@ -694,48 +721,26 @@ class ArenaWidget(QWidget):
                 tx, ty = self.drag_target_pos
                 self.drag_visual_pos = (vx + (tx - vx) * 0.42, vy + (ty - vy) * 0.42)
 
-            if self.scene == "solver" and self.solver_solving and (not self.solver_done):
+            if self.scene == "solver" and self.solver_solving and self.solver_autoplay and (not self.solver_done):
                 if now - self.solver_last_step_time >= self.args.ai_interval:
-                    self.solver_obs, self.solver_done, msg = ai_step(
-                        self.model,
-                        self.solver_obs,
-                        self.solver_raw,
-                        self.solver_env,
-                    )
-                    self.solver_status = msg
+                    self.step_solver_once()
                     self.solver_last_step_time = now
-                    if self.solver_done:
-                        self.solver_status = f"AI solve finished at stage {self.solver_raw.game.stages_passed}."
 
-            if self.scene == "watch" and (not self.watch_done):
+            if self.scene == "watch" and self.watch_autoplay and (not self.watch_done):
                 if now - self.watch_last_step_time >= self.args.ai_interval:
-                    if self.watch_policy == "heuristic":
-                        self.watch_obs, self.watch_done, msg = heuristic_step(
-                            self.watch_obs,
-                            self.watch_raw,
-                            self.watch_env,
-                        )
-                    else:
-                        self.watch_obs, self.watch_done, msg = ai_step(
-                            self.model,
-                            self.watch_obs,
-                            self.watch_raw,
-                            self.watch_env,
-                        )
-                    self.watch_status = msg
+                    self.step_watch_once()
                     self.watch_last_step_time = now
-                    if self.watch_done:
-                        actor = "Heuristic" if self.watch_policy == "heuristic" else "AI"
-                        self.watch_status = f"{actor} game ended at stage {self.watch_raw.game.stages_passed}."
 
         except Exception as exc:
             self.last_error = f"Runtime error: {exc}"
             traceback.print_exc()
             if self.scene == "solver":
                 self.solver_solving = False
+                self.solver_autoplay = False
                 self.solver_done = True
                 self.solver_status = self.last_error
             elif self.scene == "watch":
+                self.watch_autoplay = False
                 self.watch_done = True
                 self.watch_status = self.last_error
             elif self.scene == "versus":
@@ -754,20 +759,21 @@ class ArenaWidget(QWidget):
     def paintEvent(self, _event):
         self.model_combo.setVisible(self.scene == "menu")
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        try:
+            painter.setRenderHint(QPainter.Antialiasing)
 
-        self.draw_background(painter)
+            self.draw_background(painter)
 
-        if self.scene == "menu":
-            self.draw_menu_scene(painter)
-        elif self.scene == "solver":
-            self.draw_solver_scene(painter)
-        elif self.scene == "watch":
-            self.draw_watch_scene(painter)
-        elif self.scene == "versus":
-            self.draw_versus_scene(painter)
-
-        painter.end()
+            if self.scene == "menu":
+                self.draw_menu_scene(painter)
+            elif self.scene == "solver":
+                self.draw_solver_scene(painter)
+            elif self.scene == "watch":
+                self.draw_watch_scene(painter)
+            elif self.scene == "versus":
+                self.draw_versus_scene(painter)
+        finally:
+            painter.end()
 
     def mouseMoveEvent(self, event):
         self.mouse_pos = (event.position().x(), event.position().y())
@@ -841,8 +847,29 @@ class ArenaWidget(QWidget):
         p = QPoint(int(pos[0]), int(pos[1]))
 
         if button == Qt.LeftButton:
-            if self.solver_buttons["start"].contains(p):
-                self.apply_solver_setup()
+            if self.solver_buttons["run"].contains(p):
+                if not self.solver_solving:
+                    self.apply_solver_setup(autoplay=True)
+                elif self.solver_done:
+                    self.solver_autoplay = False
+                    self.solver_status = "AI solve is already finished."
+                else:
+                    self.solver_autoplay = True
+                    self.solver_status = "AI solve running."
+                    self.solver_last_step_time = time.time()
+                return
+            if self.solver_buttons["stop"].contains(p):
+                if self.solver_solving and (not self.solver_done):
+                    self.solver_autoplay = False
+                    self.solver_status = "Paused. Click Next Move or Run AI to continue."
+                return
+            if self.solver_buttons["next"].contains(p):
+                self.solver_autoplay = False
+                self.step_solver_once()
+                return
+            if self.solver_buttons["undo"].contains(p):
+                self.solver_autoplay = False
+                self.undo_solver_step()
                 return
             if self.solver_buttons["reset"].contains(p):
                 self.init_solver_scene()
@@ -877,6 +904,28 @@ class ArenaWidget(QWidget):
             return
 
         p = QPoint(int(pos[0]), int(pos[1]))
+        if self.watch_buttons["run"].contains(p):
+            if self.watch_done:
+                actor = "Heuristic" if self.watch_policy == "heuristic" else "AI"
+                self.watch_status = f"{actor} game is already finished."
+            else:
+                self.watch_autoplay = True
+                self.watch_status = "Heuristic run resumed." if self.watch_policy == "heuristic" else "AI run resumed."
+                self.watch_last_step_time = time.time()
+            return
+        if self.watch_buttons["stop"].contains(p):
+            self.watch_autoplay = False
+            if not self.watch_done:
+                self.watch_status = "Paused. Click Next Move or Run to continue."
+            return
+        if self.watch_buttons["next"].contains(p):
+            self.watch_autoplay = False
+            self.step_watch_once()
+            return
+        if self.watch_buttons["undo"].contains(p):
+            self.watch_autoplay = False
+            self.undo_watch_step()
+            return
         if self.watch_buttons["new"].contains(p):
             self.init_watch_scene(policy=self.watch_policy)
             return
@@ -941,7 +990,98 @@ class ArenaWidget(QWidget):
                 best = (r, c)
         return best
 
-    def apply_solver_setup(self):
+    def push_playback_history(self, history_attr, raw_env, status, done):
+        history = getattr(self, history_attr)
+        history.append(capture_playback_state(raw_env, status, done))
+        if len(history) > HISTORY_LIMIT:
+            del history[0]
+
+    def pop_playback_history(self, history_attr, raw_env):
+        history = getattr(self, history_attr)
+        if not history:
+            return None
+        return restore_playback_state(raw_env, history.pop())
+
+    def step_solver_once(self):
+        if not self.solver_solving:
+            self.apply_solver_setup(autoplay=False)
+            if self.solver_done:
+                return
+
+        if self.solver_done:
+            self.solver_autoplay = False
+            self.solver_status = "AI solve is already finished."
+            return
+
+        self.push_playback_history("solver_history", self.solver_raw, self.solver_status, self.solver_done)
+        self.solver_obs, self.solver_done, msg = ai_step(
+            self.model,
+            self.solver_obs,
+            self.solver_raw,
+            self.solver_env,
+        )
+        self.solver_status = msg
+        self.solver_last_step_time = time.time()
+
+        if self.solver_done:
+            self.solver_autoplay = False
+            if "placed slot" in msg:
+                self.solver_status = f"AI solve finished at stage {self.solver_raw.game.stages_passed}."
+
+    def undo_solver_step(self):
+        restored = self.pop_playback_history("solver_history", self.solver_raw)
+        if restored is None:
+            self.solver_status = "No previous AI move to go back to."
+            return
+
+        self.solver_obs, self.solver_done, _previous_status = restored
+        self.solver_solving = True
+        self.solver_autoplay = False
+        self.solver_status = "Back one move. Click Next Move or Run AI to continue."
+        self.solver_last_step_time = time.time()
+
+    def step_watch_once(self):
+        if self.watch_done:
+            self.watch_autoplay = False
+            actor = "Heuristic" if self.watch_policy == "heuristic" else "AI"
+            self.watch_status = f"{actor} game is already finished."
+            return
+
+        self.push_playback_history("watch_history", self.watch_raw, self.watch_status, self.watch_done)
+        if self.watch_policy == "heuristic":
+            self.watch_obs, self.watch_done, msg = heuristic_step(
+                self.watch_obs,
+                self.watch_raw,
+                self.watch_env,
+            )
+        else:
+            self.watch_obs, self.watch_done, msg = ai_step(
+                self.model,
+                self.watch_obs,
+                self.watch_raw,
+                self.watch_env,
+            )
+
+        self.watch_status = msg
+        self.watch_last_step_time = time.time()
+        if self.watch_done:
+            self.watch_autoplay = False
+            actor = "Heuristic" if self.watch_policy == "heuristic" else "AI"
+            if "placed slot" in msg:
+                self.watch_status = f"{actor} game ended at stage {self.watch_raw.game.stages_passed}."
+
+    def undo_watch_step(self):
+        restored = self.pop_playback_history("watch_history", self.watch_raw)
+        if restored is None:
+            self.watch_status = "No previous move to go back to."
+            return
+
+        self.watch_obs, self.watch_done, _previous_status = restored
+        self.watch_autoplay = False
+        self.watch_status = "Back one move. Click Next Move or Run to continue."
+        self.watch_last_step_time = time.time()
+
+    def apply_solver_setup(self, autoplay=True):
         self.solver_raw.game.grid = self.solver_edit_grid.copy()
         self.solver_raw.game.hand = [SHAPE_LIBRARY[key].copy() for key in self.solver_edit_hand_keys]
         self.solver_raw.game.available = [True, True, True]
@@ -952,11 +1092,15 @@ class ArenaWidget(QWidget):
         self.solver_obs = self.solver_raw._get_obs()
         self.solver_done = self.solver_raw.game.check_game_over()
         self.solver_solving = True
+        self.solver_autoplay = bool(autoplay) and (not self.solver_done)
+        self.solver_history = []
         self.solver_last_step_time = time.time()
         if self.solver_done:
             self.solver_status = "Setup has no legal moves."
-        else:
+        elif self.solver_autoplay:
             self.solver_status = "AI started solving your setup."
+        else:
+            self.solver_status = "Setup ready. Click Next Move or Run AI."
 
     def try_human_drop(self, slot_idx, anchor_row, anchor_col):
         game = self.vs_h_raw.game
@@ -1204,9 +1348,9 @@ class ArenaWidget(QWidget):
 
         self.draw_label(painter, "Modes", 840, 202, to_color(TEXT), self.subtitle_font)
         mode_lines = [
-            ("1. Let AI solve your position", "Build a board and hand, then let the loaded model continue.", HUMAN),
-            ("2. Watch AI play a game", "Autoplay with the selected PPO model.", AI),
-            ("3. Watch heuristic play", "Scores every legal move and always picks the best one.", WARN),
+            ("1. Let AI solve your position", "Build a board and hand, then run or step through AI moves.", HUMAN),
+            ("2. Watch AI play a game", "Autoplay, pause, step forward, or go back one move.", AI),
+            ("3. Watch heuristic play", "Scores legal moves; supports run, pause, next, and back.", WARN),
             ("4. You vs the AI", "Split boards. Your valid drop triggers one AI move.", (175, 121, 255)),
         ]
         for index, (title, detail, accent) in enumerate(mode_lines):
@@ -1267,7 +1411,10 @@ class ArenaWidget(QWidget):
         self.draw_label(painter, self.solver_status, 644, 208, to_color(MUTED), self.body_font)
 
         button_specs = {
-            "start": ("Start AI Solve", AI),
+            "run": ("Run AI", AI),
+            "stop": ("Stop", BAD),
+            "next": ("Next Move", GOOD),
+            "undo": ("Back Move", WARN),
             "reset": ("Reset Editor", WARN),
             "back": ("Back To Menu", BAD),
         }
@@ -1275,13 +1422,13 @@ class ArenaWidget(QWidget):
             label, accent = button_specs[key]
             self.draw_button(painter, make_button(rect, label, accent))
 
-        self.draw_game_metrics(painter, self.solver_raw.game, 644, 334, done=self.solver_done)
+        self.draw_game_metrics(painter, self.solver_raw.game, 644, 404, done=self.solver_done)
 
         if not self.solver_solving:
-            self.draw_label(painter, "Editor controls:", 644, 494, to_color(TEXT), self.subtitle_font)
-            self.draw_label(painter, "- Left click board cell: toggle filled / empty", 644, 528, to_color(MUTED), self.body_font)
-            self.draw_label(painter, "- Left click hand slot: next shape", 644, 556, to_color(MUTED), self.body_font)
-            self.draw_label(painter, "- Right click hand slot: previous shape", 644, 584, to_color(MUTED), self.body_font)
+            self.draw_label(painter, "Editor controls:", 644, 544, to_color(TEXT), self.subtitle_font)
+            self.draw_label(painter, "- Left click board cell: toggle filled / empty", 644, 578, to_color(MUTED), self.body_font)
+            self.draw_label(painter, "- Left click hand slot: next shape", 644, 606, to_color(MUTED), self.body_font)
+            self.draw_label(painter, "- Right click hand slot: previous shape", 644, 634, to_color(MUTED), self.body_font)
 
     def draw_watch_scene(self, painter):
         right_panel = QRect(622, 130, 968, 692)
@@ -1319,9 +1466,18 @@ class ArenaWidget(QWidget):
         self.draw_label(painter, "Watch Heuristic Play" if self.watch_policy == "heuristic" else "Watch AI Play", 644, 168, to_color(TEXT), self.title_font)
         self.draw_label(painter, self.watch_status, 644, 208, to_color(MUTED), self.body_font)
 
-        self.draw_button(painter, make_button(self.watch_buttons["new"], "New Random Game", WARN))
-        self.draw_button(painter, make_button(self.watch_buttons["back"], "Back To Menu", BAD))
-        self.draw_game_metrics(painter, self.watch_raw.game, 644, 322, done=self.watch_done)
+        button_specs = {
+            "run": ("Run", AI if self.watch_policy != "heuristic" else WARN),
+            "stop": ("Stop", BAD),
+            "next": ("Next Move", GOOD),
+            "undo": ("Back Move", WARN),
+            "new": ("New Game", WARN),
+            "back": ("Back To Menu", BAD),
+        }
+        for key, rect in self.watch_buttons.items():
+            label, accent_color = button_specs[key]
+            self.draw_button(painter, make_button(rect, label, accent_color))
+        self.draw_game_metrics(painter, self.watch_raw.game, 644, 404, done=self.watch_done)
 
     def current_drag_anchor(self):
         if (not self.drag_active) or self.drag_slot is None:

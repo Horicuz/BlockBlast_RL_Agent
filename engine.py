@@ -60,9 +60,11 @@ class BlockBlastLogic:
 
     def _can_place_on_grid(self, grid, block, row, col):
         block_h, block_w = block.shape
-        if row + block_h > self.board_size or col + block_w > self.board_size:
+        if row < 0 or col < 0 or row + block_h > self.board_size or col + block_w > self.board_size:
             return False
         target_area = grid[row:row+block_h, col:col+block_w]
+        if target_area.shape != block.shape:
+            return False
         return not np.any(np.logical_and(target_area, block))
 
     def _get_legal_moves_on_grid(self, grid, block):
